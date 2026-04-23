@@ -69,7 +69,7 @@ for portfolio presentation.
 ## Local setup
 
 ```bash
-# 1. Start Postgres + pgAdmin
+# 1. Start Postgres + pgAdmin (pgAdmin on localhost:5050)
 docker compose up -d
 
 # 2. Wire credentials
@@ -79,10 +79,17 @@ cp transform/profiles.yml.example transform/profiles.yml
 # 3. Install deps
 uv sync
 
-# 4. Verify dbt ↔ Postgres
+# 4. Create the raw schema + file_inventory table
+docker exec -i health_postgres psql -U health -d health \
+  < scripts/init_raw_schema.sql
+
+# 5. Verify dbt ↔ Postgres
 uv run dbt debug --project-dir transform --profiles-dir transform
 
-# 5. Run the Streamlit app
+# 6. Load HR zones seed
+uv run dbt seed --project-dir transform --profiles-dir transform
+
+# 7. Run the Streamlit app
 uv run streamlit run app/home.py
 ```
 
