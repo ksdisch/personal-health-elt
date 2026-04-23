@@ -19,4 +19,28 @@ CREATE TABLE IF NOT EXISTS raw.file_inventory (
 );
 
 COMMENT ON TABLE raw.file_inventory IS
-    'SHA256 ledger of Health Auto Export CSVs already consumed. Loaders skip any file whose hash is present.';
+    'SHA256 ledger of Apple Health CSVs already consumed. Loaders skip any file whose hash is present.';
+
+-- Quantity metrics: HR, HRV, RHR, weight, sleep duration, VO2 max, energy, steps, ...
+-- One row per HealthKit sample. Natural key: (metric_type, source_name, start_ts).
+CREATE TABLE IF NOT EXISTS raw.quantities (
+    metric_type    TEXT NOT NULL,
+    source_name    TEXT,
+    source_version TEXT,
+    product_type   TEXT,
+    device         TEXT,
+    start_ts       TIMESTAMPTZ NOT NULL,
+    end_ts         TIMESTAMPTZ,
+    unit           TEXT,
+    value          DOUBLE PRECISION NOT NULL,
+    source_file    TEXT NOT NULL,
+    source_sha256  TEXT NOT NULL REFERENCES raw.file_inventory(sha256),
+    loaded_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (metric_type, source_name, start_ts)
+);
+
+CREATE INDEX IF NOT EXISTS quantities_metric_time_idx
+    ON raw.quantities (metric_type, start_ts);
+
+COMMENT ON TABLE raw.quantities IS
+    'Raw HealthKit quantity samples. Loaders upsert via ON CONFLICT on the natural key.';
