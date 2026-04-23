@@ -10,16 +10,21 @@ from pathlib import Path
 from prefect import flow, task
 
 from ingest.config import RAW_DATA_PATH
+from ingest.file_inventory import FileEntry, scan, unseen
 
 
 @task
-def scan_inventory(drop_dir: Path) -> list[Path]:
-    """Return new CSVs to load. Week 1 — wire up to raw.file_inventory."""
-    return []
+def scan_inventory(drop_dir: Path) -> list[FileEntry]:
+    """Hash CSVs in the drop folder and return those not yet in raw.file_inventory.
+
+    Week 1 — wire the seen_hashes query. Today we return everything as new.
+    """
+    seen_hashes: set[str] = set()  # TODO: SELECT sha256 FROM raw.file_inventory
+    return unseen(scan(drop_dir), seen_hashes)
 
 
 @task
-def load_files(paths: list[Path]) -> int:
+def load_files(entries: list[FileEntry]) -> int:
     """Dispatch each CSV to the appropriate loader. Week 2/3."""
     return 0
 
