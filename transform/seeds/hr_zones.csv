@@ -1,0 +1,6 @@
+zone_number,zone_name,hr_low,hr_high
+1,recovery,110,135
+2,aerobic_base,136,153
+3,tempo,154,171
+4,threshold,172,189
+5,vo2_max,190,220

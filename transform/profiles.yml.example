@@ -1,0 +1,13 @@
+personal_health_elt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'health') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'health') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'health') }}"
+      schema: analytics
+      threads: 4
+      sslmode: prefer

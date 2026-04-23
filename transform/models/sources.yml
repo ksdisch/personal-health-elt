@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "Raw Apple Health exports landed by the ingest loaders."
+    schema: raw
+    tables:
+      - name: quantities
+        description: "Quantity metrics — HR, HRV, weight, sleep, VO2 max, RHR, energy, steps."
+      - name: categories
+        description: "Category metrics — sleep stages, mindfulness sessions, symptoms."
+      - name: workouts
+        description: "Workout sessions with start/end, activity type, and totals."
