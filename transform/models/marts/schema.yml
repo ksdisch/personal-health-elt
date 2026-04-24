@@ -98,3 +98,54 @@ models:
       - name: hr_sample_count
         tests:
           - not_null
+
+  - name: mart_training_load
+    description: >
+      Daily training-load rollup with rolling 7-day and 28-day windows.
+      Date spine fills zero-load days so rolling averages denominate
+      correctly. training_load uses a simplified Banister TRIMP (Z1–Z5
+      minutes weighted 1..5). ACWR = acute_load_7d / chronic_load_28d.
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+      - name: zone_2_min
+        tests:
+          - not_null
+      - name: zone_2_min_7d
+        tests:
+          - not_null
+      - name: training_load
+        tests:
+          - not_null
+      - name: acute_load_7d
+        tests:
+          - not_null
+      - name: chronic_load_28d
+        tests:
+          - not_null
+
+  - name: mart_recovery_state
+    description: >
+      PUBLIC API for the weekly-health-review Claude skill. Combines RHR,
+      HRV, training load, and a rule-based recovery_signal into one daily
+      row. Schema changes require lockstep updates to the consumer skill.
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+      - name: is_today
+        tests:
+          - not_null
+      - name: recovery_signal
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - well_recovered
+                  - neutral
+                  - strained
+                  - insufficient_data
