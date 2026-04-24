@@ -62,3 +62,39 @@ models:
       - name: sample_count
         tests:
           - not_null
+
+  - name: mart_workout_zones
+    description: >
+      Per-workout HR zone breakdown. Time (seconds) in each of five zones
+      from hr_zones.csv, plus avg/max HR. Feeds weekly training-load marts.
+    columns:
+      - name: day_local
+        tests:
+          - not_null
+      - name: activity_type
+        tests:
+          - not_null
+      - name: start_ts_local
+        tests:
+          - not_null
+      - name: duration_sec
+        tests:
+          - not_null
+      - name: zone_1_sec
+        tests:
+          - not_null
+      - name: zone_2_sec
+        tests:
+          - not_null
+      - name: zone_3_sec
+        tests:
+          - not_null
+      - name: zone_4_sec
+        tests:
+          - not_null
+      - name: zone_5_sec
+        tests:
+          - not_null
+      - name: hr_sample_count
+        tests:
+          - not_null

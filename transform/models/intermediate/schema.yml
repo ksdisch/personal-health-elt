@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: int_workout_hr_samples
+    description: >
+      HR samples that fell inside a workout window, tagged with zone_number
+      and sample_duration_sec (via LEAD). One row per (workout, hr_sample).
+    columns:
+      - name: activity_type
+        tests:
+          - not_null
+      - name: workout_start_ts_local
+        tests:
+          - not_null
+      - name: workout_end_ts_local
+        tests:
+          - not_null
+      - name: hr_ts_local
+        tests:
+          - not_null
+      - name: hr_bpm
+        tests:
+          - not_null
+      - name: sample_duration_sec
+        tests:
+          - not_null
