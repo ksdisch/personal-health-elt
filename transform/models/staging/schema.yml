@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: stg_quantities
+    description: >
+      1:1 reflection of raw.quantities with (a) HK prefix stripped from metric_type,
+      (b) timestamps normalized to America/Chicago, and (c) multi-source dedup
+      via source_priority (Apple Watch > iPhone > other).
+    columns:
+      - name: metric_name
+        description: HealthKit identifier with HK(Quantity|Category)TypeIdentifier stripped.
+        tests:
+          - not_null
+      - name: source_name
+        description: Human-readable source device name from the export (e.g., "Kyle's Apple Watch").
+      - name: start_ts_local
+        description: start_ts converted to America/Chicago.
+        tests:
+          - not_null
+      - name: end_ts_local
+      - name: unit
+      - name: value
+        description: The metric reading (bpm, kg, minutes, etc., depending on metric_name).
+        tests:
+          - not_null
+      - name: source_priority
+        description: "1=Apple Watch, 2=iPhone, 3=other/third-party."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3]
+                quote: false

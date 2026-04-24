@@ -1,5 +1,11 @@
 """Streamlit landing page for the personal health ELT pipeline."""
-import streamlit as st
+import sys
+from pathlib import Path
+
+# Put project root on sys.path so pages can import ingest.* and app.lib.*
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import streamlit as st  # noqa: E402
 
 st.set_page_config(page_title="Personal Health", layout="wide")
 

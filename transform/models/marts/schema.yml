@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: mart_daily_rhr
+    description: >
+      Daily resting heart rate (bpm) in America/Chicago. One row per day,
+      primary-source-only via the staging dedup.
+    columns:
+      - name: day
+        description: Calendar date in America/Chicago.
+        tests:
+          - not_null
+          - unique
+      - name: resting_heart_rate
+        description: RHR in beats per minute.
+        tests:
+          - not_null
+      - name: source_name
+      - name: unit
