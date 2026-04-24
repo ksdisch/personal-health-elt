@@ -1,33 +1,87 @@
-"""Daily view — today's key metrics at a glance."""
+"""Daily view — today's key metrics at a glance.
+
+One tab per metric. Each tab uses the same _render helper so the layout
+stays consistent as more metrics are added.
+"""
+import pandas as pd
 import streamlit as st
 
-from app.lib.queries import daily_rhr
+from app.lib.queries import daily_hrv, daily_rhr, daily_vo2max, daily_weight
 
 st.title("Daily")
-st.caption("Resting heart rate (bpm), America/Chicago")
+st.caption("All values in America/Chicago")
 
-df = daily_rhr()
 
-if df.empty:
-    st.info(
-        "No resting HR data yet. Load a CSV first:\n\n"
-        "```\nuv run python -m ingest.loaders.quantities <path-to-csv>\n```"
-    )
-else:
+def _render(
+    df: pd.DataFrame,
+    *,
+    value_col: str,
+    label: str,
+    unit: str,
+    decimals: int = 1,
+    empty_hint: str | None = None,
+) -> None:
+    """Standard metric layout: three cards + line chart + raw-data expander."""
+    if df.empty:
+        st.info(empty_hint or f"No {label} data loaded yet.")
+        return
+
     latest = df.iloc[-1]
-    avg_7 = df.tail(7)["resting_heart_rate"].mean()
-    avg_all = df["resting_heart_rate"].mean()
+    avg_7 = df.tail(7)[value_col].mean()
+    avg_all = df[value_col].mean()
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric(
-        "Latest RHR",
-        f"{int(latest['resting_heart_rate'])} bpm",
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        f"Latest {label}",
+        f"{latest[value_col]:.{decimals}f} {unit}",
         help=f"as of {latest['day'].strftime('%Y-%m-%d')}",
     )
-    col2.metric("7-day average", f"{avg_7:.1f} bpm")
-    col3.metric("All-time average", f"{avg_all:.1f} bpm")
+    c2.metric("7-day average", f"{avg_7:.{decimals}f} {unit}")
+    c3.metric("All-time average", f"{avg_all:.{decimals}f} {unit}")
 
-    st.line_chart(df.set_index("day")["resting_heart_rate"], height=320)
+    st.line_chart(df.set_index("day")[value_col], height=320)
 
     with st.expander("Raw data"):
         st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+tab_rhr, tab_hrv, tab_vo2, tab_weight = st.tabs(
+    ["Resting HR", "HRV", "VO₂ Max", "Weight"]
+)
+
+with tab_rhr:
+    _render(
+        daily_rhr(),
+        value_col="resting_heart_rate",
+        label="RHR",
+        unit="bpm",
+        decimals=0,
+    )
+
+with tab_hrv:
+    _render(
+        daily_hrv(),
+        value_col="hrv_ms",
+        label="HRV",
+        unit="ms",
+        decimals=1,
+    )
+
+with tab_vo2:
+    _render(
+        daily_vo2max(),
+        value_col="vo2max",
+        label="VO₂ Max",
+        unit="mL/(kg·min)",
+        decimals=1,
+    )
+
+with tab_weight:
+    _render(
+        daily_weight(),
+        value_col="weight_kg",
+        label="Weight",
+        unit="kg",
+        decimals=1,
+        empty_hint="No weight data yet. Connect a smart scale to Apple Health and re-export.",
+    )

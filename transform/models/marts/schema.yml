@@ -17,3 +17,48 @@ models:
           - not_null
       - name: source_name
       - name: unit
+
+  - name: mart_daily_hrv
+    description: >
+      Daily heart rate variability (SDNN, ms). One row per day — Apple Watch
+      takes multiple HRV samples during sleep, averaged here.
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+      - name: hrv_ms
+        tests:
+          - not_null
+      - name: sample_count
+        tests:
+          - not_null
+
+  - name: mart_daily_weight
+    description: >
+      Daily body mass (kg). Last reading wins when multiple readings happen
+      on the same day. Currently empty — no smart scale tracked in Health.
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+      - name: weight_kg
+        tests:
+          - not_null
+
+  - name: mart_daily_vo2max
+    description: >
+      Daily VO2 Max (mL/(kg·min)). Sparse by nature — Apple only produces
+      a reading after outdoor workouts. Multiple same-day readings averaged.
+    columns:
+      - name: day
+        tests:
+          - not_null
+          - unique
+      - name: vo2max
+        tests:
+          - not_null
+      - name: sample_count
+        tests:
+          - not_null

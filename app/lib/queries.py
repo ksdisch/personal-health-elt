@@ -19,13 +19,42 @@ def _engine() -> Engine:
     return create_engine(DATABASE_URL)
 
 
+def _daily_mart(sql: str) -> pd.DataFrame:
+    """Shared read pattern for daily marts (keeps each public fn a one-liner)."""
+    return pd.read_sql(sql, _engine(), parse_dates=["day"])
+
+
 @st.cache_data(ttl=300)
 def daily_rhr() -> pd.DataFrame:
-    """Daily resting heart rate (bpm) in America/Chicago, from mart_daily_rhr."""
-    return pd.read_sql(
+    """Daily resting heart rate (bpm), one row per day."""
+    return _daily_mart(
         "SELECT day, resting_heart_rate, source_name "
-        "FROM analytics_marts.mart_daily_rhr "
-        "ORDER BY day",
-        _engine(),
-        parse_dates=["day"],
+        "FROM analytics_marts.mart_daily_rhr ORDER BY day"
+    )
+
+
+@st.cache_data(ttl=300)
+def daily_hrv() -> pd.DataFrame:
+    """Daily HRV SDNN (ms), averaged across nightly samples."""
+    return _daily_mart(
+        "SELECT day, hrv_ms, sample_count "
+        "FROM analytics_marts.mart_daily_hrv ORDER BY day"
+    )
+
+
+@st.cache_data(ttl=300)
+def daily_vo2max() -> pd.DataFrame:
+    """Daily VO2 Max (mL/(kg·min)). Sparse — only on workout days."""
+    return _daily_mart(
+        "SELECT day, vo2max, sample_count "
+        "FROM analytics_marts.mart_daily_vo2max ORDER BY day"
+    )
+
+
+@st.cache_data(ttl=300)
+def daily_weight() -> pd.DataFrame:
+    """Daily weight (kg), last reading of the day wins."""
+    return _daily_mart(
+        "SELECT day, weight_kg, source_name "
+        "FROM analytics_marts.mart_daily_weight ORDER BY day"
     )
