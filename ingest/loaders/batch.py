@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 
 from ingest.config import DATABASE_URL
 from ingest.loaders.quantities import LoadResult, load_quantities_csv
+from ingest.loaders.workouts import load_workouts_csv
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ def dispatch(path: Path) -> LoaderKind | None:
     name = path.name
     if "HKQuantityTypeIdentifier" in name:
         return "quantities"
+    if "HKWorkoutActivityType" in name:
+        return "workouts"
     if "HKCategoryTypeIdentifier" in name:
         return "categories"
     return None
@@ -62,11 +65,11 @@ def load_folder(
     *,
     engine: Engine | None = None,
     quantities_loader: Callable[..., LoadResult] = load_quantities_csv,
+    workouts_loader: Callable[..., LoadResult] = load_workouts_csv,
 ) -> BatchResult:
     """Walk folder recursively; load every recognized HK CSV.
 
-    The quantities_loader is injectable for tests — production callers
-    don't need to pass it.
+    Sub-loaders are injectable for tests — production callers don't pass them.
     """
     if not folder.is_dir():
         raise FileNotFoundError(f"Not a directory: {folder}")
@@ -74,11 +77,14 @@ def load_folder(
     engine = engine or create_engine(DATABASE_URL)
     result = BatchResult(folder=folder)
 
+    loaders = {"quantities": quantities_loader, "workouts": workouts_loader}
+
     for path in sorted(folder.rglob("*.csv")):
         kind = dispatch(path)
-        if kind == "quantities":
+        loader = loaders.get(kind)
+        if loader is not None:
             try:
-                result.loaded.append(quantities_loader(path, engine=engine))
+                result.loaded.append(loader(path, engine=engine))
             except Exception as exc:
                 logger.error("FAILED %s: %s", path.name, exc)
                 result.errors.append((path, exc))

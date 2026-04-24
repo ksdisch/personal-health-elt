@@ -31,3 +31,33 @@ models:
               arguments:
                 values: [1, 2, 3]
                 quote: false
+
+  - name: stg_workouts
+    description: >
+      1:1 reflection of raw.workouts with timestamps normalized to
+      America/Chicago, a derived day_local column, and multi-source dedup.
+    columns:
+      - name: activity_type
+        description: Workout activity (Running, Cycling, Walking, Yoga, ...).
+        tests:
+          - not_null
+      - name: start_ts_local
+        tests:
+          - not_null
+      - name: end_ts_local
+        tests:
+          - not_null
+      - name: day_local
+        description: Calendar date of start_ts in America/Chicago.
+        tests:
+          - not_null
+      - name: duration_sec
+        tests:
+          - not_null
+      - name: source_priority
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3]
+                quote: false

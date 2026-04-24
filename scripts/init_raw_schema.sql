@@ -44,3 +44,34 @@ CREATE INDEX IF NOT EXISTS quantities_metric_time_idx
 
 COMMENT ON TABLE raw.quantities IS
     'Raw HealthKit quantity samples. Loaders upsert via ON CONFLICT on the natural key.';
+
+-- Workouts: one row per HealthKit workout (run, ride, lift, yoga, ...).
+-- Natural key: (activity_type, source_name, start_ts). Unit-embedded
+-- source fields like "659.283 kcal" are parsed to numeric at the loader.
+CREATE TABLE IF NOT EXISTS raw.workouts (
+    activity_type     TEXT NOT NULL,
+    source_name       TEXT,
+    source_version    TEXT,
+    product_type      TEXT,
+    start_ts          TIMESTAMPTZ NOT NULL,
+    end_ts            TIMESTAMPTZ NOT NULL,
+    duration_sec      DOUBLE PRECISION NOT NULL,
+    total_energy_kcal DOUBLE PRECISION,
+    total_distance_m  DOUBLE PRECISION,
+    elevation_asc_m   DOUBLE PRECISION,
+    elevation_desc_m  DOUBLE PRECISION,
+    max_speed_mps     DOUBLE PRECISION,
+    indoor            BOOLEAN,
+    source_file       TEXT NOT NULL,
+    source_sha256     TEXT NOT NULL REFERENCES raw.file_inventory(sha256),
+    loaded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (activity_type, source_name, start_ts)
+);
+
+CREATE INDEX IF NOT EXISTS workouts_activity_time_idx
+    ON raw.workouts (activity_type, start_ts);
+CREATE INDEX IF NOT EXISTS workouts_time_range_idx
+    ON raw.workouts (start_ts, end_ts);
+
+COMMENT ON TABLE raw.workouts IS
+    'Raw HealthKit workouts. The time-range index supports the HR-sample join in intermediate models.';
