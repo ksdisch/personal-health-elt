@@ -58,3 +58,38 @@ def daily_weight() -> pd.DataFrame:
         "SELECT day, weight_kg, source_name "
         "FROM analytics_marts.mart_daily_weight ORDER BY day"
     )
+
+
+@st.cache_data(ttl=300)
+def recovery_state() -> pd.DataFrame:
+    """Public-API mart feeding weekly-health-review."""
+    return _daily_mart(
+        "SELECT day, is_today, rhr_bpm, hrv_ms, hrv_ms_7d_prior_avg, "
+        "zone_2_min_today, zone_2_min_7d, strength_sessions_7d, "
+        "training_load_today, acute_load_7d, chronic_load_28d, acwr, "
+        "days_since_last_workout, recovery_signal "
+        "FROM analytics_marts.mart_recovery_state ORDER BY day"
+    )
+
+
+@st.cache_data(ttl=300)
+def training_load() -> pd.DataFrame:
+    """Daily training load + rolling windows."""
+    return _daily_mart(
+        "SELECT day, zone_2_min, zone_2_min_7d, strength_sessions_7d, "
+        "strength_min_7d, training_load, acute_load_7d, chronic_load_28d, acwr "
+        "FROM analytics_marts.mart_training_load ORDER BY day"
+    )
+
+
+@st.cache_data(ttl=300)
+def workout_zones() -> pd.DataFrame:
+    """Per-workout zone breakdown (seconds in each zone)."""
+    return pd.read_sql(
+        "SELECT day_local AS day, activity_type, start_ts_local AS start_ts, "
+        "duration_sec, zone_1_sec, zone_2_sec, zone_3_sec, zone_4_sec, "
+        "zone_5_sec, hr_sample_count, avg_hr_bpm, max_hr_bpm "
+        "FROM analytics_marts.mart_workout_zones ORDER BY start_ts_local",
+        _engine(),
+        parse_dates=["day", "start_ts"],
+    )
