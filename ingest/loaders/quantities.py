@@ -131,11 +131,18 @@ def _record_file(conn: Connection, sha: str, file_name: str) -> None:
 def _upsert_rows(conn: Connection, df: pd.DataFrame) -> int:
     """Upsert rows, returning the count actually inserted.
 
+    Empty DataFrames (header-only CSVs — common for unused HK metrics like
+    DietaryVitaminK) are a valid no-op: nothing to insert, but the enclosing
+    transaction still records the file in raw.file_inventory so we don't
+    re-read an empty file on every run.
+
     psycopg's executemany returns rowcount=-1 for ON CONFLICT DO NOTHING, so
-    we compute the delta via before/after counts. Two extra queries is cheap
-    for weekly loads of small files, and the truthful count is worth more
-    than the savings.
+    we compute the delta via before/after COUNT(*). Two extra queries is
+    cheap for weekly loads, and the truthful count is worth more.
     """
+    if df.empty:
+        return 0
+
     metadata = MetaData()
     quantities = Table("quantities", metadata, schema="raw", autoload_with=conn)
     stmt = pg_insert(quantities).on_conflict_do_nothing(
