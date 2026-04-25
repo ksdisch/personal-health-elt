@@ -93,6 +93,23 @@ uv run dbt seed --project-dir transform --profiles-dir transform
 uv run streamlit run app/home.py
 ```
 
+## Scheduled refresh (optional)
+
+The Prefect flow `ingest.flows.weekly_load` walks `data/raw/`, loads any
+new HK CSVs through the batch dispatcher, and triggers `dbt build` if rows
+landed. It's idempotent — re-running on a clean folder is a no-op.
+
+```bash
+# Run once:
+uv run python -m ingest.flows.weekly_load
+
+# Long-lived scheduler (Sunday 11 AM CT):
+uv run python -m ingest.flows.weekly_load --serve
+```
+
+`--serve` registers a cron schedule and stays running. Pair it with `caffeinate`
+or a launchd plist if you want it to survive sleep.
+
 ## Portfolio notes
 
 A few deliberate design choices worth calling out:
