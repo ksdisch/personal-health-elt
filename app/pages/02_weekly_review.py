@@ -53,27 +53,36 @@ st.caption("Green band = sweet spot (0.8–1.3). Red = injury-risk zone (>1.5)."
 acwr_df = df[["day", "acwr"]].dropna()
 
 if len(acwr_df) >= 2:
+    # Anchor bands to the data's actual date range so the band layer and the
+    # line layer share an x-scale (day:T). Earlier version used pixel-space
+    # alt.value(0..10_000) which hijacked the shared x-scale and squished
+    # the line to the left edge.
+    day_min = acwr_df["day"].min()
+    day_max = acwr_df["day"].max()
     bands = pd.DataFrame(
         [
-            {"start": 0.8, "end": 1.3, "tier": "sweet spot"},
-            {"start": 1.5, "end": 3.0, "tier": "injury risk"},
+            {"day_start": day_min, "day_end": day_max,
+             "y_low": 0.8, "y_high": 1.3, "tier": "sweet spot"},
+            {"day_start": day_min, "day_end": day_max,
+             "y_low": 1.5, "y_high": 3.0, "tier": "injury risk"},
         ]
     )
+    y_max = max(2.0, acwr_df["acwr"].max() * 1.1)
     band_layer = (
         alt.Chart(bands)
         .mark_rect(opacity=0.18)
         .encode(
-            x=alt.value(0),
-            x2=alt.value(10_000),
-            y=alt.Y("start:Q"),
-            y2=alt.Y2("end:Q"),
+            x=alt.X("day_start:T", title=None),
+            x2="day_end:T",
+            y=alt.Y("y_low:Q", scale=alt.Scale(domain=[0, y_max]), title="ACWR"),
+            y2="y_high:Q",
             color=alt.Color(
                 "tier:N",
                 scale=alt.Scale(
                     domain=["sweet spot", "injury risk"],
                     range=["#22c55e", "#ef4444"],
                 ),
-                legend=alt.Legend(title=None),
+                legend=alt.Legend(title=None, orient="top"),
             ),
         )
     )
@@ -82,11 +91,7 @@ if len(acwr_df) >= 2:
         .mark_line(point=True, strokeWidth=2, color="#0ea5e9")
         .encode(
             x=alt.X("day:T", title=None),
-            y=alt.Y(
-                "acwr:Q",
-                scale=alt.Scale(domain=[0, max(2.0, acwr_df["acwr"].max() * 1.1)]),
-                title="ACWR",
-            ),
+            y=alt.Y("acwr:Q", scale=alt.Scale(domain=[0, y_max])),
             tooltip=[
                 alt.Tooltip("day:T"),
                 alt.Tooltip("acwr:Q", format=".2f"),
