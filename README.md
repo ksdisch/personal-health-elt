@@ -32,6 +32,26 @@ are part of the deliverable.
 
 **Scale of real data flowing through right now:** 286,770 quantity samples across 35 metric types · 78 workouts · 30,859 HR samples joined to workout windows · 31 daily recovery-state rows · all loaded in ~10 seconds end-to-end.
 
+## Screenshots
+
+### Weekly Review — `mart_recovery_state` consumer surface
+
+The headline page. Recovery signal as a colored badge, ACWR trajectory on green sweet-spot / red injury-risk bands, HRV vs. 7-day prior baseline, and the last 14 days as a sortable table. The "What the skill sees" expander at the bottom shows the exact JSON payload that goes to the `weekly-health-review` Claude skill.
+
+![Weekly Review page](docs/screenshots/weekly_review.png)
+
+### Training Load — the SQL interesting bits made visual
+
+Acute (7d) vs. chronic (28d) load lines, rolling Zone 2 minutes, and a per-workout zone-stack chart colored by intensity (Zone 1 grey → Zone 5 red). Each bar is one workout's actual time-in-zone, computed from the `int_workout_hr_samples` range-join.
+
+![Training Load page](docs/screenshots/training_load.png)
+
+### Daily — per-metric tabs
+
+Resting HR, HRV, VO₂ Max, and Weight tabs with a shared 3-card-and-trend layout. The Weight tab shows an empty-state hint (no smart scale data yet — the `mart_daily_weight` mart is shipped and waiting).
+
+![Daily page](docs/screenshots/daily.png)
+
 ## Architecture
 
 ```
@@ -192,6 +212,46 @@ uv run python scripts/weekly_health_review.py
 Pipes a complete H2 block to stdout — signal headline, day-by-day table,
 1–4 prescriptive recommendations derived from real rules (ACWR sweet spot,
 HRV trend, Zone 2 deficit, strain-day count).
+
+## Common commands
+
+A cheat sheet for day-to-day operation. All commands run from the project root.
+
+```bash
+# Daily ops
+uv run python -m ingest.loaders.batch data/raw/      # load any new HK CSVs (idempotent)
+uv run dbt build --project-dir transform --profiles-dir transform   # rebuild marts + run all tests
+uv run python scripts/weekly_health_review.py        # generate this week's briefing markdown
+uv run streamlit run app/home.py                     # serve the dashboard
+
+# Verification (instant, run any time)
+uv run ruff check .                                  # lint
+uv run pytest                                        # unit tests (37, ~0.5s)
+uv run dbt parse  --project-dir transform --profiles-dir transform  # dbt syntax check
+uv run dbt debug  --project-dir transform --profiles-dir transform  # connection test
+docker compose ps                                    # are the containers up?
+
+# DB introspection
+docker exec -i health_postgres psql -U health -d health   # interactive psql
+docker exec -i health_postgres psql -U health -d health -c "\
+  SELECT 'quantities' AS tbl, COUNT(*) FROM raw.quantities \
+  UNION ALL SELECT 'workouts', COUNT(*) FROM raw.workouts \
+  UNION ALL SELECT 'recovery', COUNT(*) FROM analytics_marts.mart_recovery_state;"
+```
+
+## Read the code
+
+Direct links to the most interesting files, in case you're skimming:
+
+- [`transform/models/marts/mart_recovery_state.sql`](transform/models/marts/mart_recovery_state.sql) — the public-API mart. Contract-tested with `accepted_values` on `recovery_signal` and `unique(day)`.
+- [`transform/models/intermediate/int_workout_hr_samples.sql`](transform/models/intermediate/int_workout_hr_samples.sql) — the range-join (workouts × HR samples) plus `LEAD()` per-sample duration. Materialized as a table to amortize cost.
+- [`transform/models/marts/mart_training_load.sql`](transform/models/marts/mart_training_load.sql) — date-spine + rolling 7-day acute / 28-day chronic + ACWR. The denominate-correctly-through-rest-days move.
+- [`transform/models/staging/stg_quantities.sql`](transform/models/staging/stg_quantities.sql) — TZ normalization + multi-source dedup (Apple Watch > iPhone > other) via `row_number()`.
+- [`ingest/loaders/quantities.py`](ingest/loaders/quantities.py) — two-level idempotency: SHA file ledger + ON CONFLICT row dedup, both inside `engine.begin()`.
+- [`ingest/loaders/workouts.py`](ingest/loaders/workouts.py) — unit-embedded value parser (`"659.283 kcal"` → `659.283`), tolerant of missing columns per activity type.
+- [`scripts/weekly_health_review.py`](scripts/weekly_health_review.py) — briefing generator. Rule-based recommendations (ACWR sweet-spot, HRV trend, Z2 deficit, strain count).
+- [`app/pages/02_weekly_review.py`](app/pages/02_weekly_review.py) — the Streamlit page screenshotted above. Altair layered chart with `mark_rect` bands.
+- [`transform/seeds/hr_zones.csv`](transform/seeds/hr_zones.csv) — HR zones as configuration. Zone 2 locked at 136–153 bpm.
 
 ## Project structure
 
