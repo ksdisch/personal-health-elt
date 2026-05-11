@@ -100,3 +100,61 @@ uv run python -m ingest.flows.weekly_load            # run the ingest flow
 - Feature branches: `feat/`, `fix/`, `refactor/`, `docs/`
 - Commit frequently with descriptive messages
 - Never push directly to main
+- Stage files by name (`git add path/to/file ...`). Never `git add -A` or
+  `git add .` — too easy to accidentally include `.env`, `data/raw/*.csv`,
+  or `transform/target/`.
+
+## Orchestrator workflow
+
+For multi-phase tasks (more than ~2 areas of the repo touched), this
+project uses an orchestrator-worker pattern. Artifacts:
+
+- `.claude/orchestrator-prompt.md` — copy-paste to start a new
+  orchestrator session
+- `.claude/agents/` — named specialist subagents
+  (`dbt-modeler`, `streamlit-page-wright`, `verifier`, `loader-engineer`)
+- `.claude/templates/phase-brief.md` — the template the orchestrator
+  fills in for every worker dispatch
+
+Default style is **hybrid**: phases run sequentially; within a phase the
+orchestrator MAY fan out to multiple parallel `Agent` calls. The
+orchestrator coordinates only — it does not run shell, edit files, or
+read code directly. Every concrete action is dispatched.
+
+## Conventions for subagents (every worker inherits these)
+
+- **Stay in scope.** Edit ONLY the files listed under "Files in scope" in
+  the phase brief. Surface anything outside that list as OPEN QUESTIONS.
+- **Two-attempt rule.** If a fix fails twice, STOP and return OPEN
+  QUESTIONS — don't keep iterating or loosen tests to make things pass.
+- **No destructive shortcuts.** Never `--no-verify`, `rm -rf`,
+  `dbt run-operation` for cleanups, `git reset --hard`, or `git push`
+  unless the brief explicitly authorizes it.
+- **`mart_recovery_state.sql` is off-limits** unless the brief explicitly
+  authorizes a contract change (which also requires updating the
+  `weekly-health-review` skill in lockstep).
+- **Tests can fail for a reason.** If a dbt test or pytest fails, read
+  the compiled SQL / test source first. Decide whether the test is wrong
+  or the change is wrong. Don't loosen the test without a written reason.
+
+## Project-specific gotchas
+
+- **Numeric-leading page modules.** `app/pages/05_year_view.py` cannot be
+  imported via `import app.pages.05_year_view` (Python syntax error on the
+  leading digit). For smoke tests, use `compile(open(path).read(), path,
+  "exec")` for a syntax-only check, or `importlib.util.spec_from_file_location`
+  + `exec_module` if you actually need to run the module.
+- **`accepted_values` test syntax.** dbt 1.8+ uses the nested form:
+  ```yaml
+  - accepted_values:
+      arguments:
+        values: [a, b, c]
+  ```
+  The old top-level `values:` form will silently no-op.
+- **Schema layouts.** Marts → `analytics_marts.*`, intermediate →
+  `analytics_intermediate.*`, staging → `analytics_staging.*`, raw →
+  `raw.*`. The app layer always queries the `analytics_*` schemas, never
+  `raw.*` or `public.*`.
+- **`dbt build --select +model` vs `model+`.** `+model` = build all
+  upstream deps + the model. `model+` = build the model + everything
+  downstream. Use `+model` when adding a new model to a fresh DB.
