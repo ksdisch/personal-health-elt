@@ -93,3 +93,39 @@ def workout_zones() -> pd.DataFrame:
         _engine(),
         parse_dates=["day", "start_ts"],
     )
+
+
+@st.cache_data(ttl=300)
+def daily_anomaly_bands() -> pd.DataFrame:
+    """Tall-format daily metric values with rolling 28d mean, std, z-score.
+
+    Powers the Anomaly Dashboard. Currently covers rhr_bpm and hrv_ms;
+    sleep duration joins here once the categories loader is built.
+    """
+    return _daily_mart(
+        "SELECT day, metric, value, rolling_mean, rolling_std, z_score "
+        "FROM analytics_intermediate.int_daily_anomaly_bands "
+        "ORDER BY metric, day"
+    )
+
+
+@st.cache_data(ttl=300)
+def monthly_aerobic_efficiency() -> pd.DataFrame:
+    """Monthly time-weighted avg HR within Zone 2 + total Z2 minutes."""
+    return pd.read_sql(
+        "SELECT month, avg_z2_hr, z2_minutes, sample_count "
+        "FROM analytics_marts.mart_monthly_aerobic_efficiency "
+        "ORDER BY month",
+        _engine(),
+        parse_dates=["month"],
+    )
+
+
+@st.cache_data(ttl=300)
+def daily_signals() -> pd.DataFrame:
+    """Wide-format daily signals for correlation analysis."""
+    return _daily_mart(
+        "SELECT day, rhr_bpm, hrv_ms, trimp, acwr, recovery_signal, "
+        "recovery_score "
+        "FROM analytics_marts.mart_daily_signals ORDER BY day"
+    )

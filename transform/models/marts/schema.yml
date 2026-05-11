@@ -149,3 +149,79 @@ models:
                   - neutral
                   - strained
                   - insufficient_data
+
+  - name: mart_monthly_aerobic_efficiency
+    description: >
+      Monthly time-weighted avg HR within Zone 2 plus total Zone 2 minutes.
+      The slow-moving fitness signal: avg Z2 HR drifts down as the aerobic
+      base builds. Zone 2 = zone_number 2 = 136–153 bpm.
+    columns:
+      - name: month
+        description: >
+          First day of the calendar month (America/Chicago) produced by
+          date_trunc('month', workout_start_ts_local). Grain of the mart.
+        tests:
+          - not_null
+          - unique
+      - name: avg_z2_hr
+        description: >
+          Time-weighted average HR (bpm) across all Zone-2 samples in the
+          month: sum(hr_bpm * sample_duration_sec) / sum(sample_duration_sec).
+          Time-weighting prevents denser-sampled stretches from skewing the
+          mean.
+        tests:
+          - not_null
+      - name: z2_minutes
+        description: >
+          Total minutes spent in Zone 2 during the month (sum of HR-sample
+          durations / 60).
+        tests:
+          - not_null
+      - name: sample_count
+        description: >
+          Number of Zone-2 HR samples aggregated for the month. Useful for
+          interpreting the stability of avg_z2_hr (small counts = noisy).
+        tests:
+          - not_null
+
+  - name: mart_daily_signals
+    description: >
+      Wide-format daily signals for correlation / lagged analysis. Thin
+      selector on mart_recovery_state with a numeric recovery_score column.
+      Sleep duration appends here once ingestion is built.
+    columns:
+      - name: day
+        description: Calendar date in America/Chicago. Grain of the mart.
+        tests:
+          - not_null
+          - unique
+      - name: rhr_bpm
+        description: Resting heart rate (bpm) for the day, from mart_daily_rhr.
+      - name: hrv_ms
+        description: Heart rate variability (SDNN, ms) for the day, from mart_daily_hrv.
+      - name: trimp
+        description: >
+          Day's TRIMP-style training load (zone minutes weighted 1..5);
+          aliased from mart_recovery_state.training_load_today.
+      - name: acwr
+        description: >
+          Acute-to-chronic workload ratio (acute_load_7d / chronic_load_28d)
+          carried through from mart_training_load via mart_recovery_state.
+      - name: recovery_signal
+        description: >
+          Rule-based recovery bucket from mart_recovery_state. Same domain
+          as the public-API mart so the consumer enum stays in sync.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - well_recovered
+                  - neutral
+                  - strained
+                  - insufficient_data
+      - name: recovery_score
+        description: >
+          Numeric encoding of recovery_signal for correlation use:
+          well_recovered → 1, neutral → 0, strained → -1,
+          insufficient_data → null.
