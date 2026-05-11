@@ -7,6 +7,10 @@
 -- single numeric column. Lag/lead calculations live in the consumer
 -- (Streamlit) so the mart stays raw.
 --
+-- Companion of mart_recovery_state: same daily grain and overlapping
+-- columns. mart_recovery_state is the public-API contract for the
+-- weekly-health-review skill; this mart is the internal correlation lens.
+--
 -- recovery_score is a one-shot numeric mapping for correlation use:
 --   well_recovered → 1, neutral → 0, strained → -1, insufficient_data → null.
 --

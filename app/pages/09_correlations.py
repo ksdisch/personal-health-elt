@@ -113,9 +113,9 @@ for lead_col, lead_label in LEADING.items():
                 "r": r,
                 "n": n,
                 "p": p,
-                "sig": p is not None and not pd.isna(p) and p < 0.05,
+                "sig": not pd.isna(p) and p < 0.05,
                 "label": (
-                    f"{r:+.2f}{'★' if (p is not None and not pd.isna(p) and p < 0.05) else ''}"
+                    f"{r:+.2f}{'★' if (not pd.isna(p) and p < 0.05) else ''}"
                     if not pd.isna(r)
                     else "—"
                 ),

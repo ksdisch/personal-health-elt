@@ -15,6 +15,7 @@ fatigue — the kind of pattern that's invisible in line charts.
 from __future__ import annotations
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -168,19 +169,13 @@ st.altair_chart(
 )
 
 # ---------------------------------------------------------- quadrant counts
-def _quadrant(row) -> str:
-    hard = row["training_load_today"] >= load_median
-    recovered = row["hrv_ms"] >= hrv_median
-    if hard and recovered:
-        return "Hard + recovered"
-    if hard and not recovered:
-        return "Hard + strained"
-    if not hard and recovered:
-        return "Rested + recovered"
-    return "Rested + strained"
-
-
-df["quadrant"] = df.apply(_quadrant, axis=1)
+hard = df["training_load_today"] >= load_median
+recovered = df["hrv_ms"] >= hrv_median
+df["quadrant"] = (
+    np.where(hard, "Hard", "Rested")
+    + " + "
+    + np.where(recovered, "recovered", "strained")
+)
 
 st.subheader(f"Quadrant breakdown — last {window_days} days")
 counts = (

@@ -20,7 +20,7 @@ from app.lib.queries import daily_anomaly_bands
 
 st.title("Anomaly Dashboard")
 st.caption(
-    "Rolling 28-day z-score bands from `int_daily_anomaly_bands`. "
+    "Rolling 28-day z-score bands from `mart_daily_anomaly_bands`. "
     "Today is excluded from its own baseline; |z| > 2 is flagged."
 )
 
@@ -69,7 +69,7 @@ def _panel(metric: str, label: str) -> alt.Chart:
             x="day:T",
             y="value:Q",
             tooltip=[
-                alt.Tooltip("day:T", format="%a %b %d"),
+                alt.Tooltip("day:T", format="%a %b %d, %Y"),
                 alt.Tooltip("value:Q", title=label, format=".1f"),
                 alt.Tooltip("rolling_mean:Q", title="28d mean", format=".1f"),
                 alt.Tooltip("z_score:Q", title="z-score", format=".2f"),
@@ -83,7 +83,7 @@ def _panel(metric: str, label: str) -> alt.Chart:
             x="day:T",
             y="value:Q",
             tooltip=[
-                alt.Tooltip("day:T", format="%a %b %d"),
+                alt.Tooltip("day:T", format="%a %b %d, %Y"),
                 alt.Tooltip("value:Q", title=label, format=".1f"),
                 alt.Tooltip("z_score:Q", title="z-score", format=".2f"),
             ],

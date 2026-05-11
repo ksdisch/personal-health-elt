@@ -188,7 +188,11 @@ models:
     description: >
       Wide-format daily signals for correlation / lagged analysis. Thin
       selector on mart_recovery_state with a numeric recovery_score column.
-      Sleep duration appends here once ingestion is built.
+      Sleep duration appends here once ingestion is built. Companion to
+      mart_recovery_state — same daily grain and overlapping columns, but
+      mart_recovery_state is the public-API contract consumed by the
+      weekly-health-review skill while this mart is the internal
+      correlation lens.
     columns:
       - name: day
         description: Calendar date in America/Chicago. Grain of the mart.
@@ -224,4 +228,58 @@ models:
         description: >
           Numeric encoding of recovery_signal for correlation use:
           well_recovered → 1, neutral → 0, strained → -1,
-          insufficient_data → null.
+          insufficient_data → null (the insufficient_data fall-through).
+        tests:
+          - accepted_values:
+              arguments:
+                values: [-1, 0, 1]
+                quote: false
+
+  - name: mart_daily_anomaly_bands
+    description: >
+      Tall-format daily metric values with a rolling 28-day mean, sample
+      stddev, and z-score. Window excludes today (1 PRECEDING) so a fresh
+      anomaly does not dilute its own threshold. One row per (metric, day);
+      currently covers rhr_bpm and hrv_ms. Promoted from intermediate to
+      marts because it refs mart_daily_rhr / mart_daily_hrv (a backwards
+      arrow under the staging → intermediate → marts rule). Streamlit's
+      06_anomaly.py queries this mart directly and pivots on (day, metric),
+      hence the compound-unique singular test in transform/tests/.
+    columns:
+      - name: day
+        description: Calendar date in America/Chicago (date).
+        tests:
+          - not_null
+      - name: metric
+        description: >
+          Name of the daily metric. Currently one of rhr_bpm or hrv_ms; new
+          metrics (e.g. sleep_minutes) become additional UNION branches.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - rhr_bpm
+                  - hrv_ms
+      - name: value
+        description: >
+          Raw metric value for this (metric, day). RHR is bpm; HRV is SDNN
+          ms. Always non-null because the upstream daily marts already drop
+          null-value days.
+        tests:
+          - not_null
+      - name: rolling_mean
+        description: >
+          Trailing 28-day mean of value, computed STRICTLY before today
+          (rows between 28 preceding and 1 preceding). Null for the warm-up
+          period until a 28-day window of priors exists.
+      - name: rolling_std
+        description: >
+          Trailing 28-day sample standard deviation of value over the same
+          1-PRECEDING window as rolling_mean. Null during warm-up and when
+          all priors are identical.
+      - name: z_score
+        description: >
+          (value - rolling_mean) / rolling_std. Null when rolling_std is
+          null or zero (warm-up / no variance). |z| > 2 flags an anomaly
+          in the Streamlit Anomaly Dashboard.
