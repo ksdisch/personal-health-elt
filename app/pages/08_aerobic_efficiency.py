@@ -18,13 +18,21 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from app.lib.queries import daily_vo2max, monthly_aerobic_efficiency
+from app.lib.queries import daily_vo2max, hr_zones, monthly_aerobic_efficiency
+
+# Pull Zone 2 bounds from the seed so the chart stays in sync with the
+# canonical hr_zones config (no hardcoded bpm literals).
+_zones = hr_zones()
+_z2 = _zones.loc[_zones["zone_name"] == "aerobic_base"].iloc[0]
+Z2_LOW = int(_z2["hr_low"])
+Z2_HIGH = int(_z2["hr_high"])
+Z2_MID = (Z2_LOW + Z2_HIGH) / 2
 
 st.title("Aerobic Efficiency")
 st.caption(
-    "Monthly avg HR within Zone 2 (136–153 bpm). Lower is better — "
-    "same physiological effort at a lower heart rate signals an improving "
-    "aerobic base."
+    f"Monthly avg HR within Zone 2 ({Z2_LOW}–{Z2_HIGH} bpm). Lower is "
+    "better — same physiological effort at a lower heart rate signals "
+    "an improving aerobic base."
 )
 
 ae_df = monthly_aerobic_efficiency()
@@ -33,14 +41,14 @@ ae_df = monthly_aerobic_efficiency()
 if ae_df.empty:
     st.info(
         "No Zone 2 data yet. The mart aggregates from `int_workout_hr_samples`; "
-        "you need workouts with HR samples that fall in zone 2 (136–153 bpm)."
+        f"you need workouts with HR samples that fall in zone 2 ({Z2_LOW}–{Z2_HIGH} bpm)."
     )
 else:
     avg_z2_min = float(ae_df["avg_z2_hr"].min())
     avg_z2_max = float(ae_df["avg_z2_hr"].max())
     y_pad = max((avg_z2_max - avg_z2_min) * 0.2, 2)
-    y_low = max(136, avg_z2_min - y_pad)
-    y_high = min(153, avg_z2_max + y_pad)
+    y_low = max(Z2_LOW, avg_z2_min - y_pad)
+    y_high = min(Z2_HIGH, avg_z2_max + y_pad)
 
     hr_line = (
         alt.Chart(ae_df)
@@ -61,7 +69,7 @@ else:
         )
     )
     midline = (
-        alt.Chart(pd.DataFrame({"y": [145.0]}))
+        alt.Chart(pd.DataFrame({"y": [Z2_MID]}))
         .mark_rule(strokeDash=[6, 4], color="#94a3b8")
         .encode(y="y:Q")
     )
@@ -83,7 +91,7 @@ else:
 
     st.subheader("Avg HR within Zone 2 (lower = fitter)")
     st.altair_chart(z2_chart, use_container_width=True)
-    st.caption("Dashed line at 145 bpm (mid-Zone 2) for visual reference.")
+    st.caption(f"Dashed line at {Z2_MID:.0f} bpm (mid-Zone 2) for visual reference.")
 
     st.subheader("Zone 2 volume")
     st.altair_chart(minutes_chart, use_container_width=True)

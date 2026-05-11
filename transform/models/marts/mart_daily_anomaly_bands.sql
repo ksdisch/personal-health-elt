@@ -1,4 +1,5 @@
 -- Daily anomaly bands for tracked physiological metrics.
+-- (Promoted from int_daily_anomaly_bands when layer inversion was fixed in PR #1 review.)
 --
 -- For each metric, computes a rolling 28-day mean and sample-std (over the
 -- 28 days STRICTLY before today, not including today), then derives a

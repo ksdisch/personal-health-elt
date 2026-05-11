@@ -10,9 +10,10 @@
 -- sample_duration_sec column is precomputed in int_workout_hr_samples via
 -- LEAD over the workout's neighbouring samples.
 --
--- Zone 2 = zone_number 2 = 'aerobic_base' = 136–153 bpm (per hr_zones.csv,
--- the user's measured Zone 2). Filtering by zone_number rather than
--- zone_name keeps the join arithmetic; the seed is the source of truth.
+-- Zone 2 = 'aerobic_base' = 136–153 bpm (per hr_zones.csv, the user's
+-- measured Zone 2). We derive the zone_number from the seed via a scalar
+-- subquery so the mart self-heals if zone definitions change — CLAUDE.md
+-- rule: HR zones are config, not code.
 
 with z2_samples as (
     select
@@ -20,7 +21,10 @@ with z2_samples as (
         hr_bpm,
         sample_duration_sec
     from {{ ref('int_workout_hr_samples') }}
-    where zone_number = 2
+    where zone_number = (
+            select zone_number from {{ ref('hr_zones') }}
+            where zone_name = 'aerobic_base'
+        )
       and sample_duration_sec > 0
 )
 

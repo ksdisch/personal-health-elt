@@ -104,8 +104,23 @@ def daily_anomaly_bands() -> pd.DataFrame:
     """
     return _daily_mart(
         "SELECT day, metric, value, rolling_mean, rolling_std, z_score "
-        "FROM analytics_intermediate.int_daily_anomaly_bands "
+        "FROM analytics_marts.mart_daily_anomaly_bands "
         "ORDER BY metric, day"
+    )
+
+
+@st.cache_data(ttl=300)
+def hr_zones() -> pd.DataFrame:
+    """HR zone boundaries from the `hr_zones` seed.
+
+    Columns: zone_number, zone_name, hr_low, hr_high. Zone names match
+    `transform/seeds/hr_zones.csv` (recovery, aerobic_base, tempo,
+    threshold, vo2_max). Use this instead of hardcoding zone boundaries.
+    """
+    return pd.read_sql(
+        "SELECT zone_number, zone_name, hr_low, hr_high "
+        "FROM analytics_seeds.hr_zones ORDER BY zone_number",
+        _engine(),
     )
 
 
