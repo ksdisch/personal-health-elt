@@ -3,8 +3,8 @@ file to the right sub-loader based on its HK type prefix.
 
 Dispatch table:
     HKQuantityTypeIdentifier* -> ingest.loaders.quantities.load_quantities_csv
-    HKCategoryTypeIdentifier* -> [Week 2 TODO]
-    Workouts (by filename)    -> [Week 3 TODO]
+    HKCategoryTypeIdentifier* -> ingest.loaders.categories.load_categories_csv
+    HKWorkoutActivityType*    -> ingest.loaders.workouts.load_workouts_csv
 
 One failing file never stops the batch — errors are collected and
 surfaced in the BatchResult for the caller to decide what to do.
@@ -20,6 +20,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from ingest.config import DATABASE_URL
+from ingest.loaders.categories import load_categories_csv
 from ingest.loaders.quantities import LoadResult, load_quantities_csv
 from ingest.loaders.workouts import load_workouts_csv
 
@@ -66,6 +67,7 @@ def load_folder(
     engine: Engine | None = None,
     quantities_loader: Callable[..., LoadResult] = load_quantities_csv,
     workouts_loader: Callable[..., LoadResult] = load_workouts_csv,
+    categories_loader: Callable[..., LoadResult] = load_categories_csv,
 ) -> BatchResult:
     """Walk folder recursively; load every recognized HK CSV.
 
@@ -77,7 +79,11 @@ def load_folder(
     engine = engine or create_engine(DATABASE_URL)
     result = BatchResult(folder=folder)
 
-    loaders = {"quantities": quantities_loader, "workouts": workouts_loader}
+    loaders = {
+        "quantities": quantities_loader,
+        "workouts": workouts_loader,
+        "categories": categories_loader,
+    }
 
     for path in sorted(folder.rglob("*.csv")):
         kind = dispatch(path)

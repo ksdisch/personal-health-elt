@@ -32,23 +32,28 @@ def _fake_ok_loader(calls: list[Path]):
     return _load
 
 
-def test_load_folder_dispatches_quantity_files_only(tmp_path: Path) -> None:
+def test_load_folder_dispatches_to_correct_loaders(tmp_path: Path) -> None:
     (tmp_path / "HKQuantityTypeIdentifierHeartRate_a.csv").write_text("hdr\n")
     (tmp_path / "HKQuantityTypeIdentifierRestingHeartRate_b.csv").write_text("hdr\n")
     (tmp_path / "HKCategoryTypeIdentifierSleep_c.csv").write_text("hdr\n")
     (tmp_path / "other.csv").write_text("hdr\n")
 
-    calls: list[Path] = []
-    result = load_folder(tmp_path, quantities_loader=_fake_ok_loader(calls))
+    q_calls: list[Path] = []
+    c_calls: list[Path] = []
+    result = load_folder(
+        tmp_path,
+        quantities_loader=_fake_ok_loader(q_calls),
+        categories_loader=_fake_ok_loader(c_calls),
+    )
 
-    assert len(calls) == 2
-    assert {p.name for p in calls} == {
+    assert {p.name for p in q_calls} == {
         "HKQuantityTypeIdentifierHeartRate_a.csv",
         "HKQuantityTypeIdentifierRestingHeartRate_b.csv",
     }
-    assert len(result.loaded) == 2
-    assert len(result.skipped) == 2  # category + other
-    assert result.total_rows_inserted == 20
+    assert {p.name for p in c_calls} == {"HKCategoryTypeIdentifierSleep_c.csv"}
+    assert len(result.loaded) == 3
+    assert len(result.skipped) == 1  # only the unrecognized "other.csv"
+    assert result.total_rows_inserted == 30
 
 
 def test_load_folder_walks_subdirectories(tmp_path: Path) -> None:

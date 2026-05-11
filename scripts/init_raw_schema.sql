@@ -75,3 +75,31 @@ CREATE INDEX IF NOT EXISTS workouts_time_range_idx
 
 COMMENT ON TABLE raw.workouts IS
     'Raw HealthKit workouts. The time-range index supports the HR-sample join in intermediate models.';
+
+-- Categories: HKCategoryTypeIdentifier* events (sleep stages, mindful
+-- sessions, audio events, AppleStandHour, HR threshold events). Optional
+-- per-type metadata (HKTimeZone on sleep rows, HKHeartRateEventThreshold
+-- on HR events) lands in nullable TEXT columns.
+-- Natural key: (category_type, source_name, start_ts).
+CREATE TABLE IF NOT EXISTS raw.categories (
+    category_type           TEXT NOT NULL,
+    category_value          TEXT,
+    source_name             TEXT,
+    source_version          TEXT,
+    product_type            TEXT,
+    device                  TEXT,
+    start_ts                TIMESTAMPTZ NOT NULL,
+    end_ts                  TIMESTAMPTZ,
+    hk_time_zone            TEXT,
+    hk_heart_rate_threshold TEXT,
+    source_file             TEXT NOT NULL,
+    source_sha256           TEXT NOT NULL REFERENCES raw.file_inventory(sha256),
+    loaded_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (category_type, source_name, start_ts)
+);
+
+CREATE INDEX IF NOT EXISTS categories_type_time_idx
+    ON raw.categories (category_type, start_ts);
+
+COMMENT ON TABLE raw.categories IS
+    'Raw HealthKit category samples. Loaders upsert via ON CONFLICT on the natural key.';
