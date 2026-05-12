@@ -36,3 +36,12 @@ seeds:
         zone_name: varchar
         hr_low: integer
         hr_high: integer
+    sleep_score_weights:
+      +column_types:
+        weight_efficiency: numeric
+        weight_rem: numeric
+        weight_deep: numeric
+        weight_fragmentation: numeric
+        target_efficiency_pct: numeric
+        target_rem_pct: numeric
+        target_deep_pct: numeric

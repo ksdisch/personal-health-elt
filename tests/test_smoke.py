@@ -21,6 +21,7 @@ NEW_PAGES = [
     "07_readiness.py",
     "08_aerobic_efficiency.py",
     "09_correlations.py",
+    "12_sleep.py",
 ]
 
 

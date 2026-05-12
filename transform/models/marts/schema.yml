@@ -283,3 +283,106 @@ models:
           (value - rolling_mean) / rolling_std. Null when rolling_std is
           null or zero (warm-up / no variance). |z| > 2 flags an anomaly
           in the Streamlit Anomaly Dashboard.
+
+  - name: mart_sleep_stages
+    description: >
+      Hypnogram data source: one row per Apple sleep-stage segment per
+      night, with an in-night sequence index for ordered rendering. Grain is
+      (night_date, stage_start_local); enforced by the compound-unique
+      singular test sleep_stages_unique_night_start.
+    columns:
+      - name: night_date
+        description: Date you woke up (America/Chicago), noon-to-noon attribution.
+        tests:
+          - not_null
+      - name: stage_start_local
+        description: Segment start in America/Chicago.
+        tests:
+          - not_null
+      - name: stage_end_local
+        description: Segment end in America/Chicago.
+        tests:
+          - not_null
+      - name: duration_min
+        description: Segment duration in minutes.
+        tests:
+          - not_null
+      - name: sleep_stage
+        description: Apple sleep-stage label for the segment.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - asleepCore
+                  - asleepDeep
+                  - asleepREM
+                  - asleepUnspecified
+                  - awake
+                  - inBed
+      - name: is_asleep
+        description: True when sleep_stage is one of the four asleep* stages.
+      - name: source_name
+        description: Device that recorded the segment.
+      - name: stage_seq_in_night
+        description: 1-based ordinal of this segment within its night, ordered by start.
+        tests:
+          - not_null
+
+  - name: mart_sleep_nights
+    description: >
+      Per-night sleep rollup with a composite sleep score in [0, 100].
+      One row per night_date. Combines stage minutes from int_sleep_segments
+      with weights/targets from the sleep_score_weights seed.
+    columns:
+      - name: night_date
+        description: Date you woke up (America/Chicago). Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: time_in_bed_min
+        description: >
+          Minutes in bed for the night. Uses explicit inBed segments when
+          present, otherwise falls back to wake_time_local - bedtime_local.
+        tests:
+          - not_null
+      - name: time_asleep_min
+        description: >
+          Minutes asleep: sum of asleepCore + asleepDeep + asleepREM +
+          asleepUnspecified durations.
+        tests:
+          - not_null
+      - name: sleep_efficiency_pct
+        description: 100 * time_asleep_min / time_in_bed_min, rounded to 1 dp.
+      - name: rem_min
+        description: Minutes in asleepREM for the night.
+      - name: deep_min
+        description: Minutes in asleepDeep for the night.
+      - name: core_min
+        description: Minutes in asleepCore for the night.
+      - name: awake_min
+        description: Minutes in awake segments during the night.
+      - name: rem_pct_of_sleep
+        description: 100 * rem_min / time_asleep_min, rounded to 1 dp.
+      - name: deep_pct_of_sleep
+        description: 100 * deep_min / time_asleep_min, rounded to 1 dp.
+      - name: awakening_count
+        description: Count of awake segments (each contiguous awake span is one awakening).
+        tests:
+          - not_null
+      - name: bedtime_local
+        description: Earliest segment start of the night (America/Chicago).
+        tests:
+          - not_null
+      - name: wake_time_local
+        description: Latest segment end of the night (America/Chicago).
+        tests:
+          - not_null
+      - name: composite_score
+        description: >
+          Composite sleep score in [0, 100]. Weighted combination of
+          efficiency, REM-of-sleep, and deep-of-sleep against per-user
+          targets (sleep_score_weights seed), minus a fragmentation penalty
+          per awakening. Clamped at 0 on the low end.
+        tests:
+          - not_null
