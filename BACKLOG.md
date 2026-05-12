@@ -113,12 +113,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
-### [Feature] Sleep-stage hypnogram + composite sleep-quality mart
-- **Why:** Sleep is the single biggest lever on recovery, and right now this pipeline doesn't analyze it at all — even though Apple Health exports stage-level data. Once the categories loader lands (item 1), build the actual sleep showpiece: hypnogram visualization (REM/Deep/Light/Awake bands by time), per-night composite score (efficiency × REM% × deep% × fragmentation penalty), and a 28-day sleep trend page.
-- **Acceptance:** New marts `mart_sleep_nights` (one row per night with efficiency, REM minutes, deep minutes, awake count, composite score) and `mart_sleep_stages` (stage-level grain for hypnogram). New Streamlit page `12_sleep.py` showing tonight's hypnogram, 14-day trend, and a "what's hurting your sleep score" breakdown. Composite score formula documented and parameterized in a seed.
-- **Size:** L
-- **Added:** 2026-05-11
-
 ### [Feature] Natural-language → SQL agent over the marts
 - **Why:** Distinct from the conversational chat agent (which answers questions and explains): this one is the power-user tool. You type a SQL-shaped request — "weeks where Zone 2 minutes exceeded 90 and HRV stayed above 60ms" — and get the literal query, a result table, and the ability to refine. Demonstrates the LLM-app pattern of treating the database schema as a prompt, and shows guardrails (read-only, schema-restricted, query-budget-limited).
 - **Acceptance:** Streamlit page `13_query.py`. Claude receives the compact schema + a few-shot of example NL→SQL pairs; produces a query against `analytics_marts.*`; query runs with a `SET statement_timeout = 10s` and `LIMIT 10000`; result table + raw SQL shown side-by-side. Guardrails: queries blocked if they touch `raw.*` or contain DDL keywords.
@@ -176,6 +170,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Sleep-stage hypnogram + composite sleep-quality mart
+- **Why:** Sleep is the single biggest lever on recovery, and right now this pipeline doesn't analyze it at all — even though Apple Health exports stage-level data. Once the categories loader lands (item 1), build the actual sleep showpiece: hypnogram visualization (REM/Deep/Light/Awake bands by time), per-night composite score (efficiency × REM% × deep% × fragmentation penalty), and a 28-day sleep trend page.
+- **Acceptance:** New marts `mart_sleep_nights` (one row per night with efficiency, REM minutes, deep minutes, awake count, composite score) and `mart_sleep_stages` (stage-level grain for hypnogram). New Streamlit page `12_sleep.py` showing tonight's hypnogram, 14-day trend, and a "what's hurting your sleep score" breakdown. Composite score formula documented and parameterized in a seed.
+- **Size:** L
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `claude/select-backlog-feature-bnfKN`, commits `a16434a` (feat) + `76c9508` (fix). Local `dbt build --select +mart_sleep_nights +mart_sleep_stages` green: 1 seed + 1 view (`int_sleep_segments`) + 2 tables + 29 data tests, PASS=34 TOTAL=34. Real-data run on 830 SleepAnalysis rows: `mart_sleep_nights` materialized 29 nights spanning 2026-03-21 → 2026-04-20, avg sleep_efficiency_pct=85.7%, avg composite_score=65.3, avg time_asleep_hours=6.83, avg awakenings=7.2. `mart_sleep_stages` materialized 830 rows: asleepCore 361 / awake 208 / asleepREM 147 / asleepDeep 92 / asleep 22. **Iter-1 catch:** real-data accepted_values test flagged a 7th sleep_stage value the synthetic fixtures missed — bare `asleep` (no stage suffix), 22 rows from April 5-14 from a source that records sleep without stage decomposition. Fix bucketed it into `unspecified_asleep_min` and added an "Asleep (unstaged)" band to the hypnogram legend. Composite score formula (weights 0.40 eff / 0.30 REM / 0.30 deep, fragmentation penalty 1.5 pts/awakening, targets 90% eff / 22% REM / 18% deep) lives in `sleep_score_weights` seed for easy tuning. Streamlit page `app/pages/12_sleep.py` renders last-night metric cards, hypnogram (Altair mark_rect by stage band), 14-day composite_score + efficiency trend, and a component-contribution bar chart. **Known limitation:** the noon-to-noon night attribution lumps afternoon naps into the upcoming night's rollup, producing two-segment "nights" with inflated time-in-bed (Apr 14 = 14.1hr asleep / Apr 16 = 12.8hr — both correspond to a nap + main sleep). Future refinement: sub-segment "main sleep" vs "naps" within a calendar day.
 
 ### [Feature] Add `stg_categories.sql` staging model
 - **Why:** The categories loader landed (PR #2) and 1542 rows sat in `raw.categories` across five populated HK category types, but no staging model existed. Without `stg_categories.sql` the data was invisible to dbt's intermediate/marts layers and to the Streamlit app. The sleep-stage hypnogram feature and any other category-derived insight was blocked on this. Categories also needed the same TZ-normalization + multi-source dedup pattern as `stg_quantities` (Apple Watch > iPhone > third-party).
