@@ -61,3 +61,48 @@ models:
               arguments:
                 values: [1, 2, 3]
                 quote: false
+
+  - name: stg_categories
+    description: >
+      1:1 reflection of raw.categories with (a) HKCategoryTypeIdentifier prefix
+      stripped from category_type, (b) timestamps normalized to America/Chicago,
+      and (c) multi-source dedup via source_priority (Apple Watch > iPhone > other).
+    columns:
+      - name: category_name
+        description: HealthKit identifier with HKCategoryTypeIdentifier stripped.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - SleepAnalysis
+                  - AppleStandHour
+                  - MindfulSession
+                  - HeadphoneAudioExposureEvent
+                  - AudioExposureEvent
+                  - HighHeartRateEvent
+                  - LowHeartRateEvent
+      - name: category_value
+        description: Category-specific value (e.g., asleepCore, stood, notApplicable). Nullable.
+      - name: source_name
+        description: Human-readable source device name from the export.
+        tests:
+          - not_null
+      - name: start_ts_local
+        description: start_ts converted to America/Chicago.
+        tests:
+          - not_null
+      - name: end_ts_local
+        description: end_ts converted to America/Chicago. May be NULL for point-in-time events.
+      - name: hk_time_zone
+        description: Original device time zone (set only on SleepAnalysis rows).
+      - name: hk_heart_rate_threshold
+        description: HR threshold string for HighHeartRateEvent / LowHeartRateEvent (e.g., "120 count/min").
+      - name: source_priority
+        description: "1=Apple Watch, 2=iPhone, 3=other/third-party."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3]
+                quote: false
