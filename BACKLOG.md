@@ -161,12 +161,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** L
 - **Added:** 2026-05-11
 
-### [Feature] Add `stg_categories.sql` staging model
-- **Why:** The categories loader landed (PR #2) and 1542 rows now sit in `raw.categories` across five populated HK category types, but no staging model exists. Without `stg_categories.sql` the data is invisible to dbt's intermediate/marts layers and to the Streamlit app. The sleep-stage hypnogram feature below and any other category-derived insight is blocked on this. Categories also need the same TZ-normalization + multi-source dedup pattern as `stg_quantities` (Apple Watch > iPhone > third-party).
-- **Acceptance:** `transform/models/staging/stg_categories.sql` materializes as a view, strips the `HKCategoryTypeIdentifier` prefix, converts UTC → America/Chicago (TZ owned by staging per CLAUDE.md), applies the `source_priority` window function for multi-source dedup, filters to `source_rank = 1`. `transform/models/staging/schema.yml` documents every returned column with appropriate `not_null` / `accepted_values` tests (`category_type` accepted_values covers the seven types seen in real exports including `HeadphoneAudioExposureEvent`). `dbt build --select +stg_categories` is green.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Bug] Header-only category CSVs don't register in `raw.file_inventory`
 - **Why:** During the categories loader rollout (PR #2), the otherwise-equivalent header-only files behaved inconsistently: `HKCategoryTypeIdentifierAudioExposureEvent.csv` (0 data rows) was registered in `raw.file_inventory`, but `HKCategoryTypeIdentifierLowHeartRateEvent.csv` (also 0 data rows) was not. Re-runs re-parse the unregistered file every time. Benign today (zero data rows = zero inserts either way) but a contract gap — `raw.file_inventory` is supposed to be a strict ledger of every file the loader has seen. The same inconsistency likely affects future header-only or sparse exports.
 - **Acceptance:** The loader records a `file_inventory` row for every CSV it parses successfully, regardless of whether the resulting DataFrame is empty. Unit test covers the empty-DataFrame path and asserts the file ledger entry is written. Re-running on a header-only file is reported as `LoadResult(skipped=True)`, not re-parsed. Verified: a fresh ingest of `data/raw/export_full/` produces a `file_inventory` row for every `HKCategoryTypeIdentifier*.csv` on disk.
@@ -182,6 +176,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Add `stg_categories.sql` staging model
+- **Why:** The categories loader landed (PR #2) and 1542 rows sat in `raw.categories` across five populated HK category types, but no staging model existed. Without `stg_categories.sql` the data was invisible to dbt's intermediate/marts layers and to the Streamlit app. The sleep-stage hypnogram feature and any other category-derived insight was blocked on this. Categories also needed the same TZ-normalization + multi-source dedup pattern as `stg_quantities` (Apple Watch > iPhone > third-party).
+- **Acceptance:** `transform/models/staging/stg_categories.sql` materializes as a view, strips the `HKCategoryTypeIdentifier` prefix, converts UTC → America/Chicago (TZ owned by staging per CLAUDE.md), applies the `source_priority` window function for multi-source dedup, filters to `source_rank = 1`. `transform/models/staging/schema.yml` documents every returned column with appropriate `not_null` / `accepted_values` tests (the seven HK types covered in `accepted_values`). `dbt build --select +stg_categories` is green.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `claude/select-backlog-feature-bnfKN`, commit `f8aa794`. Local `dbt build --select +stg_categories` green: 1 view + 6 tests, PASS=7 TOTAL=7. View materializes at `analytics_staging.stg_categories` with 1542 rows across five types (matches raw exactly — no dedup drops): SleepAnalysis (830), AppleStandHour (704), MindfulSession (5), HeadphoneAudioExposureEvent (2), HighHeartRateEvent (1). Dedup invariant verified (zero `(category_name, start_ts_local)` collisions). TZ round-trip spot-checked on SleepAnalysis (UTC↔CDT offset = 0). The two zero-row types (`AudioExposureEvent`, `LowHeartRateEvent`) are in the `accepted_values` list pre-emptively so a future export populating them parses without test failure. Unblocks `int_sleep_nights` / sleep-hypnogram feature.
 
 ### [Feature] Implement categories loader for sleep stages, mindfulness, audio events
 - **Why:** `ingest/loaders/categories.py:13` was a `NotImplementedError` stub. Six HK category types (SleepAnalysis, MindfulSession, AudioExposureEvent, HighHeartRateEvent, LowHeartRateEvent, AppleStandHour) were exported by Health Auto Export but skipped at ingest, so sleep-stage analytics, mindful minutes, and audio-exposure events were unavailable to dbt.
