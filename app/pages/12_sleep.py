@@ -24,6 +24,7 @@ STAGE_ORDER = [
     "asleepCore",
     "asleepDeep",
     "asleepUnspecified",
+    "asleep",
     "inBed",
 ]
 STAGE_LABELS = {
@@ -32,6 +33,7 @@ STAGE_LABELS = {
     "asleepCore": "Core",
     "asleepDeep": "Deep",
     "asleepUnspecified": "Unspecified",
+    "asleep": "Asleep (unstaged)",
     "inBed": "In bed",
 }
 STAGE_COLORS = [
@@ -40,6 +42,7 @@ STAGE_COLORS = [
     "#60a5fa",  # Core
     "#1e40af",  # Deep
     "#94a3b8",  # Unspecified
+    "#64748b",  # Asleep (unstaged) — slate, distinct from Unspecified
     "#cbd5e1",  # In bed
 ]
 

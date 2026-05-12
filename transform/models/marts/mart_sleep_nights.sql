@@ -27,7 +27,7 @@ with per_night as (
         sum(case when sleep_stage = 'asleepREM'         then duration_min else 0 end) as rem_min,
         sum(case when sleep_stage = 'asleepDeep'        then duration_min else 0 end) as deep_min,
         sum(case when sleep_stage = 'asleepCore'        then duration_min else 0 end) as core_min,
-        sum(case when sleep_stage = 'asleepUnspecified' then duration_min else 0 end) as unspecified_asleep_min,
+        sum(case when sleep_stage in ('asleepUnspecified', 'asleep') then duration_min else 0 end) as unspecified_asleep_min,
         sum(case when sleep_stage = 'awake'             then duration_min else 0 end) as awake_min,
         sum(case when sleep_stage = 'inBed'             then duration_min else 0 end) as in_bed_explicit_min,
         sum(case when sleep_stage = 'awake'             then 1 else 0 end)            as awakening_count,

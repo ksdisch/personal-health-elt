@@ -1,8 +1,11 @@
 -- Intermediate: one row per Apple sleep-stage segment, attributed to a night.
 --
 -- Apple Health emits SleepAnalysis category rows as contiguous segments
--- (asleepCore / asleepDeep / asleepREM / asleepUnspecified / awake / inBed)
--- that together describe a single night's sleep. We attribute each segment
+-- (asleepCore / asleepDeep / asleepREM / asleepUnspecified / asleep / awake
+-- / inBed) that together describe a single night's sleep. The bare `asleep`
+-- value appears when a source (e.g. third-party app, manual entry) records
+-- sleep without stage decomposition — we bucket it with asleepUnspecified
+-- since both are "asleep, stage unknown." We attribute each segment
 -- to a "night" using a noon-to-noon partition: a segment that starts before
 -- noon belongs to that calendar date's night (the morning you wake up); a
 -- segment that starts after noon belongs to the NEXT calendar date's night.
@@ -25,7 +28,7 @@ with segments as (
         start_ts_local,
         end_ts_local,
         extract(epoch from (end_ts_local - start_ts_local)) / 60.0 as duration_min,
-        category_value in ('asleepCore', 'asleepDeep', 'asleepREM', 'asleepUnspecified') as is_asleep,
+        category_value in ('asleepCore', 'asleepDeep', 'asleepREM', 'asleepUnspecified', 'asleep') as is_asleep,
         source_name,
         source_priority
     from {{ ref('stg_categories') }}

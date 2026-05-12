@@ -318,10 +318,11 @@ models:
                   - asleepDeep
                   - asleepREM
                   - asleepUnspecified
+                  - asleep
                   - awake
                   - inBed
       - name: is_asleep
-        description: True when sleep_stage is one of the four asleep* stages.
+        description: True when sleep_stage is one of the five asleep* values (Core/Deep/REM/Unspecified/asleep).
       - name: source_name
         description: Device that recorded the segment.
       - name: stage_seq_in_night
@@ -349,7 +350,7 @@ models:
       - name: time_asleep_min
         description: >
           Minutes asleep: sum of asleepCore + asleepDeep + asleepREM +
-          asleepUnspecified durations.
+          asleepUnspecified + asleep (legacy/unstaged) durations.
         tests:
           - not_null
       - name: sleep_efficiency_pct

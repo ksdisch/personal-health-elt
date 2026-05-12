@@ -47,6 +47,7 @@ models:
                   - asleepDeep
                   - asleepREM
                   - asleepUnspecified
+                  - asleep
                   - awake
                   - inBed
       - name: start_ts_local
@@ -62,7 +63,7 @@ models:
         tests:
           - not_null
       - name: is_asleep
-        description: True when sleep_stage is one of the four asleep* stages.
+        description: True when sleep_stage is one of the five asleep* values (Core/Deep/REM/Unspecified/asleep).
         tests:
           - not_null
       - name: source_name
