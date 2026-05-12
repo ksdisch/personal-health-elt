@@ -113,6 +113,18 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
+### [Refactor] Split "main sleep" from same-day naps in mart_sleep_nights
+- **Why:** The noon-to-noon partition in `int_sleep_segments` correctly attributes nighttime segments to a wake date, but it lumps afternoon naps into the upcoming night's rollup. Real-data examples in `mart_sleep_nights` after the 2026-05-12 ship: 2026-04-14 reads 14.1 hours asleep / 15 awakenings / score 40.9, and 2026-04-16 reads 12.8 hours / 13 awakenings / score 57.8 — both are a nap + main sleep on the same calendar day, producing inflated time-in-bed and depressed efficiency. The composite score punishes the user for having napped.
+- **Acceptance:** `int_sleep_segments` (or a new `int_sleep_periods`) detects gaps > ~2 hours between segments and treats each contiguous run as a distinct sleep period. `mart_sleep_nights` rolls up only the "main sleep" period (longest by duration) for the night. Optional: a sibling `mart_sleep_naps` for the secondary periods so napping isn't invisible. Re-run on real data, confirm Apr 14 / Apr 16 nights drop to plausible duration / awakening counts.
+- **Size:** M
+- **Added:** 2026-05-12
+
+### [Refactor] Calibrate sleep score targets to personal baseline
+- **Why:** `sleep_score_weights` ships with literature-derived targets (90% efficiency, 22% REM, 18% deep). Real-data averages from the first 29 nights show ~85% eff, ~17% REM, ~10% deep — deep% target is the consistent drag, sitting ~8 points below where lived experience lands. Two interpretations: (a) physiology genuinely runs low on deep and the score is honestly flagging that, or (b) the target is wrong for this user and a personal baseline would be more useful. Worth deciding deliberately rather than letting the default silently dictate "your score is bad."
+- **Acceptance:** Once N ≥ 60 nights of real data, compute per-component 75th percentile from `mart_sleep_nights` and compare to literature targets. Decision documented in the seed comments or CLAUDE.md: either keep literature targets (and label `composite_score` as "vs sleep-science targets") or replace with personal-baseline targets. If swapped, update the seed CSV and re-run.
+- **Size:** S
+- **Added:** 2026-05-12
+
 ### [Feature] Natural-language → SQL agent over the marts
 - **Why:** Distinct from the conversational chat agent (which answers questions and explains): this one is the power-user tool. You type a SQL-shaped request — "weeks where Zone 2 minutes exceeded 90 and HRV stayed above 60ms" — and get the literal query, a result table, and the ability to refine. Demonstrates the LLM-app pattern of treating the database schema as a prompt, and shows guardrails (read-only, schema-restricted, query-budget-limited).
 - **Acceptance:** Streamlit page `13_query.py`. Claude receives the compact schema + a few-shot of example NL→SQL pairs; produces a query against `analytics_marts.*`; query runs with a `SET statement_timeout = 10s` and `LIMIT 10000`; result table + raw SQL shown side-by-side. Guardrails: queries blocked if they touch `raw.*` or contain DDL keywords.
