@@ -44,41 +44,28 @@ def pg_engine() -> Engine:
     return engine
 
 
-@pytest.fixture
-def raw_test_engine(pg_engine: Engine) -> Iterator[Engine]:
-    """Engine for integration tests with non-destructive per-test cleanup.
+def cleanup_introduced_shas(engine: Engine, before_shas: list[str]) -> None:
+    """Delete file_inventory rows (and dependents) NOT in `before_shas`.
 
-    Snapshots the file_inventory SHAs that exist BEFORE the test, then
-    on teardown deletes only the SHAs the test introduced — and the
-    dependent rows in raw.quantities/workouts/categories that reference
-    those SHAs. Anything that was in the database before the test runs
-    is preserved.
+    Shared between `raw_test_engine` and the regression test in
+    `test_fixture_safety.py`. Public-ish (no underscore) so the test
+    can import it without poking at fixture internals.
 
-    Why this exists: the previous `clean_raw_quantities` fixture did a
-    blanket `TRUNCATE raw.file_inventory CASCADE` on every test, which
-    silently destroyed real Apple Health export data during routine
-    `uv run pytest` runs against a dev's local Postgres. The session-end
-    cleanup is already CI-gated; this fixture extends the same safety
-    guarantee to per-test setup so integration tests are safe to run
-    against a populated local database.
+    Two branches:
+      - `before_shas` empty: TRUNCATE CASCADE the file_inventory. The
+        table was empty before the test, so everything in it now is
+        test-introduced. TRUNCATE also sidesteps psycopg3's inability
+        to infer the element type of an empty Python list.
+      - `before_shas` non-empty: DELETE WHERE source_sha256 NOT IN the
+        snapshot, children-before-parent (the FK has no ON DELETE
+        CASCADE, so we delete dependents first).
     """
-    with pg_engine.connect() as conn:
-        before_shas = [
-            row[0] for row in conn.execute(text("SELECT sha256 FROM raw.file_inventory"))
-        ]
-
-    yield pg_engine
-
     if not before_shas:
-        # Table was empty when the test started, so everything in it
-        # now is test-introduced. TRUNCATE CASCADE is the simplest
-        # catch-all and avoids passing an empty array to psycopg3
-        # (which can't infer the element type without a value).
-        with pg_engine.begin() as conn:
+        with engine.begin() as conn:
             conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))
         return
 
-    with pg_engine.begin() as conn:
+    with engine.begin() as conn:
         params = {"before": before_shas}
         conn.execute(
             text("DELETE FROM raw.quantities WHERE source_sha256 <> ALL(:before)"),
@@ -96,6 +83,38 @@ def raw_test_engine(pg_engine: Engine) -> Iterator[Engine]:
             text("DELETE FROM raw.file_inventory WHERE sha256 <> ALL(:before)"),
             params,
         )
+
+
+@pytest.fixture
+def raw_test_engine(pg_engine: Engine) -> Iterator[Engine]:
+    """Engine for integration tests with non-destructive per-test cleanup.
+
+    Snapshots the file_inventory SHAs that exist BEFORE the test, then
+    on teardown deletes only the SHAs the test introduced — and the
+    dependent rows in raw.quantities/workouts/categories that reference
+    those SHAs. Anything that was in the database before the test runs
+    is preserved.
+
+    Why this exists: the previous `clean_raw_quantities` fixture did a
+    blanket `TRUNCATE raw.file_inventory CASCADE` on every test, which
+    silently destroyed real Apple Health export data during routine
+    `uv run pytest` runs against a dev's local Postgres. The session-end
+    cleanup is already CI-gated; this fixture extends the same safety
+    guarantee to per-test setup so integration tests are safe to run
+    against a populated local database.
+
+    The cleanup logic lives in `cleanup_introduced_shas` so the
+    regression test in `test_fixture_safety.py` can exercise it
+    directly without re-implementing the SQL.
+    """
+    with pg_engine.connect() as conn:
+        before_shas = [
+            row[0] for row in conn.execute(text("SELECT sha256 FROM raw.file_inventory"))
+        ]
+
+    yield pg_engine
+
+    cleanup_introduced_shas(pg_engine, before_shas)
 
 
 @pytest.fixture(scope="session", autouse=True)
