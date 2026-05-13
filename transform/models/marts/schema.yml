@@ -252,8 +252,8 @@ models:
           - not_null
       - name: metric
         description: >
-          Name of the daily metric. Currently one of rhr_bpm or hrv_ms; new
-          metrics (e.g. sleep_minutes) become additional UNION branches.
+          Name of the daily metric. Currently one of rhr_bpm, hrv_ms, or
+          sleep_min; new metrics become additional UNION branches.
         tests:
           - not_null
           - accepted_values:
@@ -261,6 +261,7 @@ models:
                 values:
                   - rhr_bpm
                   - hrv_ms
+                  - sleep_min
       - name: value
         description: >
           Raw metric value for this (metric, day). RHR is bpm; HRV is SDNN

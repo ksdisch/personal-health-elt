@@ -145,7 +145,7 @@ def daily_signals() -> pd.DataFrame:
     """Wide-format daily signals for correlation analysis."""
     return _daily_mart(
         "SELECT day, rhr_bpm, hrv_ms, trimp, acwr, recovery_signal, "
-        "recovery_score "
+        "recovery_score, sleep_minutes "
         "FROM analytics_marts.mart_daily_signals ORDER BY day"
     )
 

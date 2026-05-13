@@ -37,6 +37,7 @@ df = df[df["day"] >= df["day"].max() - pd.Timedelta(days=window_days)].copy()
 METRIC_LABELS = {
     "rhr_bpm": "Resting HR (bpm)",
     "hrv_ms": "HRV SDNN (ms)",
+    "sleep_min": "Sleep (minutes)",
 }
 
 
