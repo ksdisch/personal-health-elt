@@ -16,6 +16,14 @@ This is also a **portfolio project for Analytics Engineer / Data
 Engineer roles**, so code quality, dbt conventions, and design choices
 are part of the deliverable.
 
+## Live app
+
+_TODO: paste the deployed Streamlit URL here once the cloud deploy
+lands. The full step-by-step is in_ [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+_— it covers managed Postgres provisioning (Supabase / Neon / Railway),
+secrets, cold-start ingest, three deploy targets (Streamlit Cloud /
+Fly / Railway), and the redeploy path._
+
 ## What this demonstrates
 
 | Skill area | In this repo |
