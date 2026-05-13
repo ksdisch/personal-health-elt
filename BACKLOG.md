@@ -113,11 +113,17 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
-### [Feature] Sleep-stage hypnogram + composite sleep-quality mart
-- **Why:** Sleep is the single biggest lever on recovery, and right now this pipeline doesn't analyze it at all — even though Apple Health exports stage-level data. Once the categories loader lands (item 1), build the actual sleep showpiece: hypnogram visualization (REM/Deep/Light/Awake bands by time), per-night composite score (efficiency × REM% × deep% × fragmentation penalty), and a 28-day sleep trend page.
-- **Acceptance:** New marts `mart_sleep_nights` (one row per night with efficiency, REM minutes, deep minutes, awake count, composite score) and `mart_sleep_stages` (stage-level grain for hypnogram). New Streamlit page `12_sleep.py` showing tonight's hypnogram, 14-day trend, and a "what's hurting your sleep score" breakdown. Composite score formula documented and parameterized in a seed.
-- **Size:** L
-- **Added:** 2026-05-11
+### [Refactor] Split "main sleep" from same-day naps in mart_sleep_nights
+- **Why:** The noon-to-noon partition in `int_sleep_segments` correctly attributes nighttime segments to a wake date, but it lumps afternoon naps into the upcoming night's rollup. Real-data examples in `mart_sleep_nights` after the 2026-05-12 ship: 2026-04-14 reads 14.1 hours asleep / 15 awakenings / score 40.9, and 2026-04-16 reads 12.8 hours / 13 awakenings / score 57.8 — both are a nap + main sleep on the same calendar day, producing inflated time-in-bed and depressed efficiency. The composite score punishes the user for having napped.
+- **Acceptance:** `int_sleep_segments` (or a new `int_sleep_periods`) detects gaps > ~2 hours between segments and treats each contiguous run as a distinct sleep period. `mart_sleep_nights` rolls up only the "main sleep" period (longest by duration) for the night. Optional: a sibling `mart_sleep_naps` for the secondary periods so napping isn't invisible. Re-run on real data, confirm Apr 14 / Apr 16 nights drop to plausible duration / awakening counts.
+- **Size:** M
+- **Added:** 2026-05-12
+
+### [Refactor] Calibrate sleep score targets to personal baseline
+- **Why:** `sleep_score_weights` ships with literature-derived targets (90% efficiency, 22% REM, 18% deep). Real-data averages from the first 29 nights show ~85% eff, ~17% REM, ~10% deep — deep% target is the consistent drag, sitting ~8 points below where lived experience lands. Two interpretations: (a) physiology genuinely runs low on deep and the score is honestly flagging that, or (b) the target is wrong for this user and a personal baseline would be more useful. Worth deciding deliberately rather than letting the default silently dictate "your score is bad."
+- **Acceptance:** Once N ≥ 60 nights of real data, compute per-component 75th percentile from `mart_sleep_nights` and compare to literature targets. Decision documented in the seed comments or CLAUDE.md: either keep literature targets (and label `composite_score` as "vs sleep-science targets") or replace with personal-baseline targets. If swapped, update the seed CSV and re-run.
+- **Size:** S
+- **Added:** 2026-05-12
 
 ### [Feature] Natural-language → SQL agent over the marts
 - **Why:** Distinct from the conversational chat agent (which answers questions and explains): this one is the power-user tool. You type a SQL-shaped request — "weeks where Zone 2 minutes exceeded 90 and HRV stayed above 60ms" — and get the literal query, a result table, and the ability to refine. Demonstrates the LLM-app pattern of treating the database schema as a prompt, and shows guardrails (read-only, schema-restricted, query-budget-limited).
@@ -161,12 +167,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** L
 - **Added:** 2026-05-11
 
-### [Feature] Add `stg_categories.sql` staging model
-- **Why:** The categories loader landed (PR #2) and 1542 rows now sit in `raw.categories` across five populated HK category types, but no staging model exists. Without `stg_categories.sql` the data is invisible to dbt's intermediate/marts layers and to the Streamlit app. The sleep-stage hypnogram feature below and any other category-derived insight is blocked on this. Categories also need the same TZ-normalization + multi-source dedup pattern as `stg_quantities` (Apple Watch > iPhone > third-party).
-- **Acceptance:** `transform/models/staging/stg_categories.sql` materializes as a view, strips the `HKCategoryTypeIdentifier` prefix, converts UTC → America/Chicago (TZ owned by staging per CLAUDE.md), applies the `source_priority` window function for multi-source dedup, filters to `source_rank = 1`. `transform/models/staging/schema.yml` documents every returned column with appropriate `not_null` / `accepted_values` tests (`category_type` accepted_values covers the seven types seen in real exports including `HeadphoneAudioExposureEvent`). `dbt build --select +stg_categories` is green.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Bug] Header-only category CSVs don't register in `raw.file_inventory`
 - **Why:** During the categories loader rollout (PR #2), the otherwise-equivalent header-only files behaved inconsistently: `HKCategoryTypeIdentifierAudioExposureEvent.csv` (0 data rows) was registered in `raw.file_inventory`, but `HKCategoryTypeIdentifierLowHeartRateEvent.csv` (also 0 data rows) was not. Re-runs re-parse the unregistered file every time. Benign today (zero data rows = zero inserts either way) but a contract gap — `raw.file_inventory` is supposed to be a strict ledger of every file the loader has seen. The same inconsistency likely affects future header-only or sparse exports.
 - **Acceptance:** The loader records a `file_inventory` row for every CSV it parses successfully, regardless of whether the resulting DataFrame is empty. Unit test covers the empty-DataFrame path and asserts the file ledger entry is written. Re-running on a header-only file is reported as `LoadResult(skipped=True)`, not re-parsed. Verified: a fresh ingest of `data/raw/export_full/` produces a `file_inventory` row for every `HKCategoryTypeIdentifier*.csv` on disk.
@@ -182,6 +182,22 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Sleep-stage hypnogram + composite sleep-quality mart
+- **Why:** Sleep is the single biggest lever on recovery, and right now this pipeline doesn't analyze it at all — even though Apple Health exports stage-level data. Once the categories loader lands (item 1), build the actual sleep showpiece: hypnogram visualization (REM/Deep/Light/Awake bands by time), per-night composite score (efficiency × REM% × deep% × fragmentation penalty), and a 28-day sleep trend page.
+- **Acceptance:** New marts `mart_sleep_nights` (one row per night with efficiency, REM minutes, deep minutes, awake count, composite score) and `mart_sleep_stages` (stage-level grain for hypnogram). New Streamlit page `12_sleep.py` showing tonight's hypnogram, 14-day trend, and a "what's hurting your sleep score" breakdown. Composite score formula documented and parameterized in a seed.
+- **Size:** L
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `claude/select-backlog-feature-bnfKN`, commits `a16434a` (feat) + `76c9508` (fix). Local `dbt build --select +mart_sleep_nights +mart_sleep_stages` green: 1 seed + 1 view (`int_sleep_segments`) + 2 tables + 29 data tests, PASS=34 TOTAL=34. Real-data run on 830 SleepAnalysis rows: `mart_sleep_nights` materialized 29 nights spanning 2026-03-21 → 2026-04-20, avg sleep_efficiency_pct=85.7%, avg composite_score=65.3, avg time_asleep_hours=6.83, avg awakenings=7.2. `mart_sleep_stages` materialized 830 rows: asleepCore 361 / awake 208 / asleepREM 147 / asleepDeep 92 / asleep 22. **Iter-1 catch:** real-data accepted_values test flagged a 7th sleep_stage value the synthetic fixtures missed — bare `asleep` (no stage suffix), 22 rows from April 5-14 from a source that records sleep without stage decomposition. Fix bucketed it into `unspecified_asleep_min` and added an "Asleep (unstaged)" band to the hypnogram legend. Composite score formula (weights 0.40 eff / 0.30 REM / 0.30 deep, fragmentation penalty 1.5 pts/awakening, targets 90% eff / 22% REM / 18% deep) lives in `sleep_score_weights` seed for easy tuning. Streamlit page `app/pages/12_sleep.py` renders last-night metric cards, hypnogram (Altair mark_rect by stage band), 14-day composite_score + efficiency trend, and a component-contribution bar chart. **Known limitation:** the noon-to-noon night attribution lumps afternoon naps into the upcoming night's rollup, producing two-segment "nights" with inflated time-in-bed (Apr 14 = 14.1hr asleep / Apr 16 = 12.8hr — both correspond to a nap + main sleep). Future refinement: sub-segment "main sleep" vs "naps" within a calendar day.
+
+### [Feature] Add `stg_categories.sql` staging model
+- **Why:** The categories loader landed (PR #2) and 1542 rows sat in `raw.categories` across five populated HK category types, but no staging model existed. Without `stg_categories.sql` the data was invisible to dbt's intermediate/marts layers and to the Streamlit app. The sleep-stage hypnogram feature and any other category-derived insight was blocked on this. Categories also needed the same TZ-normalization + multi-source dedup pattern as `stg_quantities` (Apple Watch > iPhone > third-party).
+- **Acceptance:** `transform/models/staging/stg_categories.sql` materializes as a view, strips the `HKCategoryTypeIdentifier` prefix, converts UTC → America/Chicago (TZ owned by staging per CLAUDE.md), applies the `source_priority` window function for multi-source dedup, filters to `source_rank = 1`. `transform/models/staging/schema.yml` documents every returned column with appropriate `not_null` / `accepted_values` tests (the seven HK types covered in `accepted_values`). `dbt build --select +stg_categories` is green.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `claude/select-backlog-feature-bnfKN`, commit `f8aa794`. Local `dbt build --select +stg_categories` green: 1 view + 6 tests, PASS=7 TOTAL=7. View materializes at `analytics_staging.stg_categories` with 1542 rows across five types (matches raw exactly — no dedup drops): SleepAnalysis (830), AppleStandHour (704), MindfulSession (5), HeadphoneAudioExposureEvent (2), HighHeartRateEvent (1). Dedup invariant verified (zero `(category_name, start_ts_local)` collisions). TZ round-trip spot-checked on SleepAnalysis (UTC↔CDT offset = 0). The two zero-row types (`AudioExposureEvent`, `LowHeartRateEvent`) are in the `accepted_values` list pre-emptively so a future export populating them parses without test failure. Unblocks `int_sleep_nights` / sleep-hypnogram feature.
 
 ### [Feature] Implement categories loader for sleep stages, mindfulness, audio events
 - **Why:** `ingest/loaders/categories.py:13` was a `NotImplementedError` stub. Six HK category types (SleepAnalysis, MindfulSession, AudioExposureEvent, HighHeartRateEvent, LowHeartRateEvent, AppleStandHour) were exported by Health Auto Export but skipped at ingest, so sleep-stage analytics, mindful minutes, and audio-exposure events were unavailable to dbt.

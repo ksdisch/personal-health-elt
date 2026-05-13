@@ -24,3 +24,49 @@ models:
       - name: sample_duration_sec
         tests:
           - not_null
+
+  - name: int_sleep_segments
+    description: >
+      One row per Apple SleepAnalysis segment, attributed to a night via a
+      noon-to-noon partition (a segment starting before noon belongs to that
+      date's night; otherwise it rolls forward to the next date). Feeds the
+      hypnogram mart and the per-night rollup mart.
+    columns:
+      - name: night_date
+        description: Date you woke up (America/Chicago). Noon-to-noon attribution.
+        tests:
+          - not_null
+      - name: sleep_stage
+        description: Apple sleep-stage label for the segment (short form, no prefix).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - asleepCore
+                  - asleepDeep
+                  - asleepREM
+                  - asleepUnspecified
+                  - asleep
+                  - awake
+                  - inBed
+      - name: start_ts_local
+        description: Segment start in America/Chicago.
+        tests:
+          - not_null
+      - name: end_ts_local
+        description: Segment end in America/Chicago.
+        tests:
+          - not_null
+      - name: duration_min
+        description: Segment duration in minutes (end - start).
+        tests:
+          - not_null
+      - name: is_asleep
+        description: True when sleep_stage is one of the five asleep* values (Core/Deep/REM/Unspecified/asleep).
+        tests:
+          - not_null
+      - name: source_name
+        description: Device that recorded the segment (passthrough from staging).
+      - name: source_priority
+        description: "1=Apple Watch, 2=iPhone, 3=other/third-party."

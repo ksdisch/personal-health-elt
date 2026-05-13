@@ -4,6 +4,7 @@ Any query that touches raw HR samples will scan millions of rows — those
 functions MUST be wrapped in @st.cache_data at the function boundary. Apply
 the decorator here, not inside page files.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -37,8 +38,7 @@ def daily_rhr() -> pd.DataFrame:
 def daily_hrv() -> pd.DataFrame:
     """Daily HRV SDNN (ms), averaged across nightly samples."""
     return _daily_mart(
-        "SELECT day, hrv_ms, sample_count "
-        "FROM analytics_marts.mart_daily_hrv ORDER BY day"
+        "SELECT day, hrv_ms, sample_count FROM analytics_marts.mart_daily_hrv ORDER BY day"
     )
 
 
@@ -46,8 +46,7 @@ def daily_hrv() -> pd.DataFrame:
 def daily_vo2max() -> pd.DataFrame:
     """Daily VO2 Max (mL/(kg·min)). Sparse — only on workout days."""
     return _daily_mart(
-        "SELECT day, vo2max, sample_count "
-        "FROM analytics_marts.mart_daily_vo2max ORDER BY day"
+        "SELECT day, vo2max, sample_count FROM analytics_marts.mart_daily_vo2max ORDER BY day"
     )
 
 
@@ -55,8 +54,7 @@ def daily_vo2max() -> pd.DataFrame:
 def daily_weight() -> pd.DataFrame:
     """Daily weight (kg), last reading of the day wins."""
     return _daily_mart(
-        "SELECT day, weight_kg, source_name "
-        "FROM analytics_marts.mart_daily_weight ORDER BY day"
+        "SELECT day, weight_kg, source_name FROM analytics_marts.mart_daily_weight ORDER BY day"
     )
 
 
@@ -143,4 +141,32 @@ def daily_signals() -> pd.DataFrame:
         "SELECT day, rhr_bpm, hrv_ms, trimp, acwr, recovery_signal, "
         "recovery_score "
         "FROM analytics_marts.mart_daily_signals ORDER BY day"
+    )
+
+
+@st.cache_data(ttl=300)
+def sleep_nights() -> pd.DataFrame:
+    """One row per night with composite score, efficiency, stage minutes."""
+    return pd.read_sql(
+        "SELECT night_date, time_in_bed_min, time_asleep_min, "
+        "sleep_efficiency_pct, rem_min, deep_min, core_min, awake_min, "
+        "rem_pct_of_sleep, deep_pct_of_sleep, awakening_count, "
+        "bedtime_local, wake_time_local, composite_score "
+        "FROM analytics_marts.mart_sleep_nights ORDER BY night_date",
+        _engine(),
+        parse_dates=["night_date", "bedtime_local", "wake_time_local"],
+    )
+
+
+@st.cache_data(ttl=300)
+def sleep_stages() -> pd.DataFrame:
+    """One row per sleep-stage segment, ordered within each night."""
+    return pd.read_sql(
+        "SELECT night_date, stage_start_local, stage_end_local, "
+        "duration_min, sleep_stage, is_asleep, source_name, "
+        "stage_seq_in_night "
+        "FROM analytics_marts.mart_sleep_stages "
+        "ORDER BY night_date, stage_seq_in_night",
+        _engine(),
+        parse_dates=["night_date", "stage_start_local", "stage_end_local"],
     )
