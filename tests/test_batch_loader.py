@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from ingest.loaders.batch import dispatch, load_folder
+from ingest.loaders.batch import (
+    BatchResult,
+    dispatch,
+    load_folder,
+    metric_type_from_path,
+)
 from ingest.loaders.quantities import LoadResult
 
 
@@ -108,3 +113,148 @@ def test_batch_result_counts(tmp_path: Path) -> None:
     assert result.files_loaded == 1
     assert result.files_already_loaded == 1
     assert result.total_rows_inserted == 5
+
+
+# ---- per-metric observability ---------------------------------------------
+
+
+def test_metric_type_strips_quantity_prefix(tmp_path: Path) -> None:
+    p = tmp_path / "HKQuantityTypeIdentifierRestingHeartRate.csv"
+    assert metric_type_from_path(p) == "RestingHeartRate"
+
+
+def test_metric_type_strips_category_prefix(tmp_path: Path) -> None:
+    p = tmp_path / "HKCategoryTypeIdentifierSleepAnalysis.csv"
+    assert metric_type_from_path(p) == "SleepAnalysis"
+
+
+def test_metric_type_strips_workout_prefix(tmp_path: Path) -> None:
+    p = tmp_path / "HKWorkoutActivityTypeRunning.csv"
+    assert metric_type_from_path(p) == "Running"
+
+
+def test_metric_type_returns_unknown_for_unrecognized(tmp_path: Path) -> None:
+    assert metric_type_from_path(tmp_path / "random.csv") == "unknown"
+
+
+def test_per_kind_summary_buckets_loaded_files(tmp_path: Path) -> None:
+    """BatchResult.per_kind_summary aggregates by loader kind, including the
+    per-kind rows_inserted total — the new signal we want for partial-failure
+    diagnosis."""
+    result = BatchResult(folder=tmp_path)
+    result.loaded = [
+        LoadResult(
+            path=tmp_path / "HKQuantityTypeIdentifierA.csv",
+            sha256="a",
+            rows_read=10,
+            rows_inserted=10,
+            skipped=False,
+        ),
+        LoadResult(
+            path=tmp_path / "HKQuantityTypeIdentifierB.csv",
+            sha256="b",
+            rows_read=0,
+            rows_inserted=0,
+            skipped=True,
+        ),
+        LoadResult(
+            path=tmp_path / "HKCategoryTypeIdentifierSleep.csv",
+            sha256="c",
+            rows_read=5,
+            rows_inserted=5,
+            skipped=False,
+        ),
+    ]
+    summary = result.per_kind_summary()
+    assert summary["quantities"]["files_loaded"] == 1
+    assert summary["quantities"]["files_already_loaded"] == 1
+    assert summary["quantities"]["rows_inserted"] == 10
+    assert summary["categories"]["files_loaded"] == 1
+    assert summary["categories"]["rows_inserted"] == 5
+    # workouts has no activity → omitted from output, never zero-padded.
+    assert "workouts" not in summary
+
+
+def test_per_kind_summary_counts_errors(tmp_path: Path) -> None:
+    result = BatchResult(folder=tmp_path)
+    result.errors = [
+        (tmp_path / "HKQuantityTypeIdentifierBoom.csv", RuntimeError("boom")),
+        (tmp_path / "HKCategoryTypeIdentifierSplat.csv", ValueError("splat")),
+    ]
+    summary = result.per_kind_summary()
+    assert summary["quantities"]["files_errored"] == 1
+    assert summary["categories"]["files_errored"] == 1
+
+
+def test_errored_metric_types_lists_each_failure(tmp_path: Path) -> None:
+    """The per-failure list is what an operator reads first to find the
+    bad file — it carries the metric name, the kind, the path, the
+    error type, and a truncated message."""
+    result = BatchResult(folder=tmp_path)
+    result.errors = [
+        (
+            tmp_path / "HKQuantityTypeIdentifierHeartRate.csv",
+            RuntimeError("boom"),
+        ),
+    ]
+    [entry] = result.errored_metric_types()
+    assert entry["metric_type"] == "HeartRate"
+    assert entry["kind"] == "quantities"
+    assert entry["error_type"] == "RuntimeError"
+    assert entry["error_msg"] == "boom"
+
+
+def test_errored_metric_types_truncates_long_messages(tmp_path: Path) -> None:
+    """A runaway stack trace can't drown the structured log."""
+    long_message = "x" * 500
+    result = BatchResult(folder=tmp_path)
+    result.errors = [
+        (tmp_path / "HKQuantityTypeIdentifierA.csv", RuntimeError(long_message)),
+    ]
+    [entry] = result.errored_metric_types()
+    assert len(entry["error_msg"]) == 200
+
+
+def test_per_metric_type_summary_sorts_by_filename(tmp_path: Path) -> None:
+    """Output is sorted for stable logs."""
+    result = BatchResult(folder=tmp_path)
+    result.loaded = [
+        LoadResult(
+            path=tmp_path / "HKQuantityTypeIdentifierZ.csv",
+            sha256="z",
+            rows_read=1,
+            rows_inserted=1,
+            skipped=False,
+        ),
+        LoadResult(
+            path=tmp_path / "HKQuantityTypeIdentifierA.csv",
+            sha256="a",
+            rows_read=2,
+            rows_inserted=2,
+            skipped=False,
+        ),
+    ]
+    rows = result.per_metric_type_summary()
+    assert [r["metric_type"] for r in rows] == ["A", "Z"]
+
+
+def test_format_summary_table_handles_empty_result(tmp_path: Path) -> None:
+    """No-op runs should still produce a readable line, not a blank string."""
+    result = BatchResult(folder=tmp_path)
+    assert "no files processed" in result.format_summary_table()
+
+
+def test_format_summary_table_renders_known_kinds(tmp_path: Path) -> None:
+    result = BatchResult(folder=tmp_path)
+    result.loaded = [
+        LoadResult(
+            path=tmp_path / "HKQuantityTypeIdentifierA.csv",
+            sha256="a",
+            rows_read=3,
+            rows_inserted=3,
+            skipped=False,
+        ),
+    ]
+    table = result.format_summary_table()
+    assert "quantities" in table
+    assert "3" in table
