@@ -11,12 +11,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 
 ## Open
 
-### [Feature] Declare `exposure: weekly-health-review` for `mart_recovery_state`
-- **Why:** The mart is contractually consumed by the external `weekly-health-review` Claude skill (per CLAUDE.md and the README's "public-API contract" cell), but no `exposures:` block exists in `transform/models/marts/schema.yml`. `dbt docs` and `dbt ls --select +exposure:` can't see the dependency, and contract drift can't be audited.
-- **Acceptance:** `exposures:` block added in `transform/models/marts/schema.yml` with `type: application`, `depends_on: [ref('mart_recovery_state')]`, owner, and a description pointing at the skill. `dbt docs generate` renders the exposure node and the lineage graph shows the downstream consumer.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Improvement] Extend smoke test to cover pages 01–04
 - **Why:** `tests/test_smoke.py:18-24` parametrizes only pages 05–09. The four oldest, most-trafficked pages (01_daily, 02_weekly_review, 03_training_load, 04_body_comp) have no compile-time guard. They don't have the leading-digit gotcha, so `compile()` works the same on them.
 - **Acceptance:** `NEW_PAGES` list expanded to all nine numbered pages under `app/pages/`; smoke test parametrizes over all of them; CI remains green.
@@ -146,6 +140,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Declare `exposure: weekly-health-review` for `mart_recovery_state`
+- **Why:** The mart was contractually consumed by the external `weekly-health-review` Claude skill, but no `exposures:` block existed. `dbt docs` and `dbt ls --select +exposure:` couldn't see the dependency, and contract drift couldn't be audited at the dbt layer.
+- **Acceptance:** `exposures:` block added in `transform/models/marts/schema.yml` with `type: application`, `depends_on: [ref('mart_recovery_state')]`, owner, description. `dbt docs generate` renders the exposure; lineage graph shows the downstream consumer.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `feat/exposure-weekly-health-review`. Appended an `exposures:` block to `transform/models/marts/schema.yml` (kept co-located with `mart_recovery_state`'s columns rather than a separate `exposures.yml`). Fields: `name: weekly_health_review`, `label: "weekly-health-review (Claude skill)"`, `type: application`, `maturity: medium`, owner Kyle Disch, `depends_on: [ref('mart_recovery_state')]`, plus a description pointing at CLAUDE.md's "Public API" section and the README's contract cell. Verified via `dbt parse` (clean), `dbt docs generate` (now reports "1 exposure" in the node count), and `dbt ls --select +exposure:weekly_health_review` (correctly walks the full upstream lineage — all staging models, intermediate, contributing marts, and their tests). Contract-drift gate is now visible to anyone running `dbt docs serve`.
 
 ### [Refactor] Extract rolling-window pattern into a dbt macro
 - **Why:** `mart_training_load.sql` and `mart_daily_anomaly_bands.sql` carried duplicated `rows between N preceding and …` window syntax. Adding a third consumer would have meant a third copy-paste.
