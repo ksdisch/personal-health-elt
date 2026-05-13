@@ -18,10 +18,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from ingest.config import DATABASE_URL
+from ingest.db import get_engine
 from ingest.loaders.categories import load_categories_csv
 from ingest.loaders.quantities import LoadResult, load_quantities_csv
 from ingest.loaders.workouts import load_workouts_csv
@@ -190,7 +189,7 @@ def load_folder(
     if not folder.is_dir():
         raise FileNotFoundError(f"Not a directory: {folder}")
 
-    engine = engine or create_engine(DATABASE_URL)
+    engine = engine or get_engine()
     result = BatchResult(folder=folder)
 
     loaders = {

@@ -23,12 +23,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** S
 - **Added:** 2026-05-12
 
-### [Refactor] Unify Postgres connection helper across ingest + app
-- **Why:** `app/lib/queries.py` uses a SQLAlchemy `_engine()` factory while `ingest/loaders/*.py` calls `psycopg.connect(DATABASE_URL)` directly. Two ways to configure connection params, two places to debug auth failures, two places to update when secrets rotate.
-- **Acceptance:** New `ingest/db.py` exposes `get_engine()` (cached) and `get_connection()` (raw psycopg). Loaders + `app/lib/queries.py` both import from it. `DATABASE_URL` parsing happens in exactly one place; existing tests still pass.
-- **Size:** M
-- **Added:** 2026-05-11
-
 ### [Improvement] Integration test for transaction-abort idempotency consistency
 - **Why:** The 2026-05-12 idempotency integration ship covered guarantees (a) ledger-skip on rerun and (c) ON CONFLICT row dedup across overlapping files. The third guarantee from the original BACKLOG entry — **(b) partial failure leaves the ledger and rows in a consistent state** — wasn't tested. Each loader writes the ledger row AND the data rows in one `engine.begin()` transaction (so an abort mid-insert rolls both back), but no test exercises the abort path. Without a test, a future refactor that splits the writes across two transactions could silently break the invariant.
 - **Acceptance:** Pytest integration test that forces a failure between file-ledger insert and row insert (e.g., monkeypatch `_upsert_rows` to raise after the ledger row is staged), asserts `file_inventory` count returns to zero and `raw.quantities` is unchanged. Runs against the existing CI Postgres service container.
@@ -134,6 +128,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Refactor] Unify Postgres connection helper across ingest + app
+- **Why:** Six call sites all wrote `create_engine(DATABASE_URL)` independently — loaders (4), `app/lib/queries.py`, `tests/conftest.py`, and `scripts/weekly_health_review.py`. Two ways to configure connection params, two places to debug auth failures, two places to update when secrets rotate.
+- **Acceptance:** New `ingest/db.py` exposes `get_engine()` (cached). Loaders + `app/lib/queries.py` import from it. `DATABASE_URL` parsing happens in exactly one place; existing tests still pass.
+- **Size:** M
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `refactor/unified-db-helper`. New module `ingest/db.py` with `@lru_cache(maxsize=1) get_engine() -> Engine`. Cached because `Engine` instances own a connection pool — creating one per call would defeat pooling. All six call sites refactored: 4 loaders, `app/lib/queries.py`, `tests/conftest.py`, and `scripts/weekly_health_review.py`. Streamlit's wrapper kept its `@st.cache_resource` decorator on top of `get_engine()` for idiomatic Streamlit cache-inspector semantics (technically redundant given `@lru_cache` but harmless and the right pattern). The BACKLOG's `get_connection()` (raw psycopg) part was scope-checked: nothing in the codebase actually uses raw psycopg — every consumer wants a SQLAlchemy `Engine` — so the helper was elided as YAGNI. Easy to add later if a consumer materializes. New `tests/test_db.py` covers the cache identity contract (`get_engine() is get_engine()`) and the `isinstance(Engine)` return-type lock. Local: pytest 79/79 (77 prior + 2 new), mypy clean (12 source files, +1 for `db.py`), pre-commit hooks pass.
 
 ### [Improvement] Extend smoke test to cover pages 01–04
 - **Why:** `tests/test_smoke.py` parametrized only pages 05–09 (and 12 after the sleep ship). The four oldest, most-trafficked pages (01_daily, 02_weekly_review, 03_training_load, 04_body_comp) had no compile-time guard.

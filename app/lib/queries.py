@@ -9,15 +9,21 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from ingest.config import DATABASE_URL
+from ingest.db import get_engine
 
 
 @st.cache_resource
 def _engine() -> Engine:
-    return create_engine(DATABASE_URL)
+    """Streamlit-cached wrapper around `ingest.db.get_engine()`.
+
+    `get_engine` is already `@lru_cache`d at module scope, so this
+    decorator is technically redundant — kept for idiomatic Streamlit
+    semantics (the cached resource shows up in the Streamlit cache
+    inspector and survives hot-reload as a single shared instance).
+    """
+    return get_engine()
 
 
 def _daily_mart(sql: str) -> pd.DataFrame:
