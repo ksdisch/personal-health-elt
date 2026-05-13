@@ -43,3 +43,15 @@ OPENWEATHER_LON: float | None = _maybe_float(os.getenv("OPENWEATHER_LON", ""))
 # read your full calendar — store in .env, never commit it. Unset =
 # calendar loader no-ops; mart_daily_context's calendar columns stay NULL.
 CALENDAR_ICS_URL: str | None = os.getenv("CALENDAR_ICS_URL") or None
+
+# Anomaly → notification pipeline.
+# Rules live in YAML at the path below (default: config/notification_rules.yaml).
+# Pushover transport is optional — both token and user must be set for the
+# notifier to POST to the API. Either missing = stdout only. NOTIFY_DRY_RUN
+# forces stdout regardless and is the test-mode toggle from the BACKLOG.
+NOTIFICATION_RULES_PATH = Path(
+    os.getenv("NOTIFICATION_RULES_PATH", str(PROJECT_ROOT / "config" / "notification_rules.yaml"))
+).resolve()
+PUSHOVER_TOKEN: str | None = os.getenv("PUSHOVER_TOKEN") or None
+PUSHOVER_USER: str | None = os.getenv("PUSHOVER_USER") or None
+NOTIFY_DRY_RUN: bool = os.getenv("NOTIFY_DRY_RUN", "").lower() in ("1", "true", "yes")
