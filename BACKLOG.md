@@ -89,12 +89,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
-### [Bug] `clean_raw_quantities` integration-test fixture wipes user's local Postgres
-- **Why:** PR #7's `tests/conftest.py::clean_raw_quantities` is function-scoped and does `TRUNCATE raw.file_inventory CASCADE` at the START of every integration test. The CASCADE wipes `raw.quantities`, `raw.workouts`, and `raw.categories` along with it — including the user's real export data. PR #12 fixed the session-end cleanup (gated on `CI=true`), but didn't address this function-scoped one. Discovered during PR J (HRR mart) verification: a routine `uv run pytest` between two `dbt build` runs silently destroyed 288K rows of real data; had to re-ingest from `data/raw/` to continue.
-- **Acceptance:** Integration tests run against a separate isolated table/schema so the user's real data is never touched. Options: (a) point the fixture at `raw_test.quantities` etc and have the loader optionally take a schema kwarg, (b) move integration tests into a transaction that rolls back, or (c) gate the fixture on a `--integration` pytest flag + change the assertions from "total count == N" to "this test's rows are present" so leftover real data doesn't break them. Pick the option that doesn't require modifying loader signatures.
-- **Size:** M
-- **Added:** 2026-05-13
-
 ### [Feature] Auto-generated "Year in Review" report — quarterly + annual narrative
 - **Why:** Strava Wrapped is a viral moment because the data is in your hands as a story, not a dashboard. Once a quarter / once a year, generate a long-form HTML or PDF report: training volume trends, biggest gains, worst weeks, seasonal patterns, recovery story, top correlations discovered. Claude writes the narrative; the marts provide the numbers. Becomes a sharable artifact and a hell of a portfolio piece.
 - **Acceptance:** New Python script `reports/year_in_review.py` (or a Prefect flow) that queries the marts, hands the aggregates to Claude with a prompt template, and outputs `reports/2026-q2.html` (Tailwind + Altair charts) + a Markdown summary. Designed to be re-runnable for any time window. At least one full report committed to the repo for show.
@@ -128,6 +122,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Bug] `clean_raw_quantities` integration-test fixture wipes user's local Postgres
+- **Why:** PR #7's `tests/conftest.py::clean_raw_quantities` is function-scoped and does `TRUNCATE raw.file_inventory CASCADE` at the START of every integration test. The CASCADE wipes `raw.quantities`, `raw.workouts`, and `raw.categories` along with it — including the user's real export data. PR #12 fixed the session-end cleanup (gated on `CI=true`), but didn't address this function-scoped one. Discovered during PR J (HRR mart) verification: a routine `uv run pytest` between two `dbt build` runs silently destroyed 288K rows of real data; had to re-ingest from `data/raw/` to continue.
+- **Acceptance:** Integration tests run against a separate isolated table/schema so the user's real data is never touched. Options: (a) point the fixture at `raw_test.quantities` etc and have the loader optionally take a schema kwarg, (b) move integration tests into a transaction that rolls back, or (c) gate the fixture on a `--integration` pytest flag + change the assertions from "total count == N" to "this test's rows are present" so leftover real data doesn't break them. Pick the option that doesn't require modifying loader signatures.
+- **Size:** M
+- **Added:** 2026-05-13
+- **Started:** 2026-05-13
+- **Completed:** 2026-05-13 — branch `claude/fix-fixture-wipe`. Followed option (c) variant: replaced the destructive `clean_raw_quantities` fixture with a non-destructive `raw_test_engine` fixture that snapshots the existing `file_inventory.sha256` set BEFORE the test, yields the engine, and on teardown deletes only the SHAs the test introduced (and the dependent rows in `raw.quantities`/`workouts`/`categories` that reference them via `source_sha256`). Empty-snapshot case (test starts against an empty DB, e.g. CI) falls back to `TRUNCATE raw.file_inventory CASCADE` — preserves CI's "dbt build sees empty tables" contract. Refactored `test_idempotency_integration.py` from absolute-count assertions (`assert n_rows == 2`) to delta assertions (`rows_after - rows_before == 2`) so leftover real data doesn't break them. Test CSV timestamps moved to year 2099 to guarantee no SHA collision with real Apple Health export content. Loader signatures unchanged. Local: ruff clean, mypy clean, pytest 79/79 skipped (Postgres-gated, exercised in CI).
 
 ### [Feature] Heart-rate recovery (HRR) mart — post-workout drop velocity
 - **Why:** ACWR is great for load, but HRR — how fast your HR drops in the 60s after a hard interval — is one of the strongest individual fitness markers, and the raw HR samples to compute it were already in `int_workout_hr_samples`. HRR shifts months before resting HR does, so it's the leading aerobic-capacity signal.
