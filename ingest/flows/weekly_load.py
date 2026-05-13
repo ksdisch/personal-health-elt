@@ -22,6 +22,7 @@ import argparse
 import json
 import logging
 import subprocess
+from datetime import date, timedelta
 from pathlib import Path
 
 from prefect import flow, get_run_logger, task
@@ -30,6 +31,12 @@ from prefect.schedules import Cron
 
 from ingest.config import RAW_DATA_PATH
 from ingest.loaders.batch import BatchResult, load_folder
+from ingest.loaders.weather_openweather import WeatherLoadResult, load_weather_daily
+
+# How far back to backfill weather on every flow run. Weather data is
+# small and immutable for past dates; a 14-day window cheaply re-covers
+# any prior-run miss without thrashing the API.
+_WEATHER_BACKFILL_DAYS = 14
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -55,6 +62,21 @@ def load_drop_folder(drop_dir: Path) -> BatchResult:
     Postgres restarting between docker compose runs).
     """
     return load_folder(drop_dir)
+
+
+@task(retries=1, retry_delay_seconds=60)
+def load_weather() -> WeatherLoadResult:
+    """Backfill the trailing `_WEATHER_BACKFILL_DAYS` of weather summaries.
+
+    Non-fatal by design: caller wraps this in try/except and logs the
+    failure as a warning rather than aborting the flow. Weather is
+    enrichment, not a primary signal. The loader itself returns
+    `WeatherLoadResult(skipped=True)` when no API key is configured —
+    so a portfolio clone without credentials gets a quiet no-op here.
+    """
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=_WEATHER_BACKFILL_DAYS - 1)
+    return load_weather_daily(start, end)
 
 
 class DbtBuildError(RuntimeError):
@@ -112,12 +134,29 @@ def weekly_load() -> dict[str, int | None]:
     log = _logger()
     result = load_drop_folder(RAW_DATA_PATH)
 
+    # Weather is enrichment, not a primary signal. Swallow failures so a
+    # bad API key / quota / outage never blocks the dbt build downstream.
+    try:
+        weather = load_weather()
+    except Exception:
+        log.exception("weather backfill failed; continuing without it")
+        weather = WeatherLoadResult(
+            rows_read=0,
+            rows_inserted=0,
+            days_fetched=0,
+            days_already_present=0,
+            skipped=True,
+        )
+
     summary: dict[str, int | None] = {
         "files_loaded": result.files_loaded,
         "files_already_seen": result.files_already_loaded,
         "files_skipped": len(result.skipped),
         "files_errored": len(result.errors),
         "rows_inserted": result.total_rows_inserted,
+        "weather_days_fetched": weather.days_fetched,
+        "weather_rows_inserted": weather.rows_inserted,
+        "weather_skipped": int(weather.skipped),
     }
 
     # Per-kind breakdown is always logged so a flaky family (e.g. only
@@ -138,8 +177,8 @@ def weekly_load() -> dict[str, int | None]:
             json.dumps(result.errored_metric_types(), default=str),
         )
         summary["dbt_exit_code"] = None
-    elif result.total_rows_inserted == 0:
-        log.info("No new rows; skipping dbt build")
+    elif result.total_rows_inserted == 0 and weather.rows_inserted == 0:
+        log.info("No new rows (HK or weather); skipping dbt build")
         summary["dbt_exit_code"] = None
     else:
         summary["dbt_exit_code"] = run_dbt_build()

@@ -19,3 +19,13 @@ sources:
         description: "Category metrics — sleep stages, mindfulness sessions, symptoms."
       - name: workouts
         description: "Workout sessions with start/end, activity type, and totals."
+      - name: weather
+        description: >
+          Daily weather summaries from OpenWeather One Call 3.0 day_summary
+          endpoint. Optional cross-source enrichment — populated only when
+          OPENWEATHER_API_KEY + lat/lon are configured. Units are the API's
+          "standard" (K / m/s / hPa / mm); conversion happens in stg_weather.
+        # Freshness disabled: this is an API-sourced optional table that may
+        # be empty (no API key configured) — an empty table would otherwise
+        # trip the source-level "no rows returned" error.
+        freshness: null

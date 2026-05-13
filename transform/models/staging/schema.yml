@@ -62,6 +62,44 @@ models:
                 values: [1, 2, 3]
                 quote: false
 
+  - name: stg_weather
+    description: >
+      1:1 reflection of raw.weather with temperatures converted from
+      Kelvin to Celsius. obs_date is renamed to `day` for consistency
+      with downstream daily marts. Optional source — empty when
+      OPENWEATHER_API_KEY is not configured.
+    columns:
+      - name: day
+        description: Calendar date the summary covers (local to lat/lon per OpenWeather contract).
+        tests:
+          - not_null
+      - name: lat
+        tests:
+          - not_null
+      - name: lon
+        tests:
+          - not_null
+      - name: temp_min_c
+        description: Daily minimum temperature in Celsius.
+      - name: temp_max_c
+        description: Daily maximum temperature in Celsius.
+      - name: temp_afternoon_c
+        description: Mid-afternoon temperature reading in Celsius.
+      - name: temp_night_c
+        description: Overnight temperature reading in Celsius — most relevant for sleep correlations.
+      - name: humidity_afternoon
+        description: Mid-afternoon relative humidity (%, 0-100).
+      - name: cloud_cover_afternoon
+        description: Mid-afternoon cloud cover (%, 0-100).
+      - name: pressure_hpa_afternoon
+        description: Mid-afternoon surface pressure (hPa).
+      - name: precip_total_mm
+        description: Total precipitation over the day (mm).
+      - name: wind_max_mps
+        description: Peak wind speed (m/s).
+      - name: wind_max_dir_deg
+        description: Peak wind direction (degrees, 0-359).
+
   - name: stg_categories
     description: >
       1:1 reflection of raw.categories with (a) HKCategoryTypeIdentifier prefix

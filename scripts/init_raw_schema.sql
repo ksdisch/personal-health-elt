@@ -103,3 +103,35 @@ CREATE INDEX IF NOT EXISTS categories_type_time_idx
 
 COMMENT ON TABLE raw.categories IS
     'Raw HealthKit category samples. Loaders upsert via ON CONFLICT on the natural key.';
+
+-- Cross-source enrichment: daily weather summaries from OpenWeather
+-- One Call 3.0 day_summary endpoint. Optional source — populated only
+-- when OPENWEATHER_API_KEY + OPENWEATHER_LAT/LON are configured. Units
+-- match the API's "standard" units: temperatures in Kelvin, wind in
+-- m/s, pressure in hPa, precipitation in mm. Conversion happens at the
+-- staging layer. PK on (obs_date, lat, lon) so re-running the loader
+-- over an already-fetched range inserts zero rows.
+CREATE TABLE IF NOT EXISTS raw.weather (
+    obs_date              DATE NOT NULL,
+    lat                   DOUBLE PRECISION NOT NULL,
+    lon                   DOUBLE PRECISION NOT NULL,
+    temp_min_k            DOUBLE PRECISION,
+    temp_max_k            DOUBLE PRECISION,
+    temp_morning_k        DOUBLE PRECISION,
+    temp_afternoon_k      DOUBLE PRECISION,
+    temp_evening_k        DOUBLE PRECISION,
+    temp_night_k          DOUBLE PRECISION,
+    humidity_afternoon    DOUBLE PRECISION,
+    cloud_cover_afternoon DOUBLE PRECISION,
+    pressure_afternoon    DOUBLE PRECISION,
+    precip_total_mm       DOUBLE PRECISION,
+    wind_max_mps          DOUBLE PRECISION,
+    wind_max_dir_deg      DOUBLE PRECISION,
+    loaded_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (obs_date, lat, lon)
+);
+
+CREATE INDEX IF NOT EXISTS weather_date_idx ON raw.weather (obs_date);
+
+COMMENT ON TABLE raw.weather IS
+    'Daily weather summaries from OpenWeather One Call 3.0. Units are the API''s "standard" (K / m/s / hPa / mm). Conversion to C / mph / etc. happens in stg_weather.';
