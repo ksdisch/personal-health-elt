@@ -22,12 +22,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import MetaData, Table, create_engine, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from ingest.config import DATABASE_URL
 from ingest.file_inventory import hash_file
+from ingest.loaders._idempotency import already_loaded, record_file, upsert_rows
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ def load_categories_csv(path: Path, engine: Engine | None = None) -> LoadResult:
     sha = hash_file(path)
 
     with engine.connect() as conn:
-        if _already_loaded(conn, sha):
+        if already_loaded(conn, sha):
             logger.info("skip %s (sha=%s already loaded)", path.name, sha[:8])
             return LoadResult(path=path, sha256=sha, rows_read=0, rows_inserted=0, skipped=True)
 
@@ -124,8 +124,13 @@ def load_categories_csv(path: Path, engine: Engine | None = None) -> LoadResult:
     df = df[_TARGET_COLUMNS]
 
     with engine.begin() as conn:
-        _record_file(conn, sha, path.name)
-        inserted = _upsert_rows(conn, df)
+        record_file(conn, sha, path.name)
+        inserted = upsert_rows(
+            conn,
+            df,
+            table="categories",
+            index_elements=["category_type", "source_name", "start_ts"],
+        )
 
     logger.info(
         "loaded %s — read %d, inserted %d (sha=%s)",
@@ -141,56 +146,6 @@ def load_categories_csv(path: Path, engine: Engine | None = None) -> LoadResult:
         rows_inserted=inserted,
         skipped=False,
     )
-
-
-def _already_loaded(conn: Connection, sha: str) -> bool:
-    row = conn.execute(
-        text("SELECT 1 FROM raw.file_inventory WHERE sha256 = :sha"),
-        {"sha": sha},
-    ).first()
-    return row is not None
-
-
-def _record_file(conn: Connection, sha: str, file_name: str) -> None:
-    conn.execute(
-        text(
-            "INSERT INTO raw.file_inventory (sha256, file_name) "
-            "VALUES (:sha, :file_name) "
-            "ON CONFLICT (sha256) DO NOTHING"
-        ),
-        {"sha": sha, "file_name": file_name},
-    )
-
-
-def _upsert_rows(conn: Connection, df: pd.DataFrame) -> int:
-    """Upsert rows, returning the count actually inserted.
-
-    Empty DataFrames are a valid no-op — many HK category files are
-    header-only for events the user has never recorded.
-    """
-    if df.empty:
-        return 0
-
-    metadata = MetaData()
-    categories = Table("categories", metadata, schema="raw", autoload_with=conn)
-    stmt = pg_insert(categories).on_conflict_do_nothing(
-        index_elements=["category_type", "source_name", "start_ts"]
-    )
-    records = _records_with_none_for_nan(df)
-
-    count_sql = text("SELECT COUNT(*) FROM raw.categories")
-    before = conn.execute(count_sql).scalar_one()
-    conn.execute(stmt, records)
-    after = conn.execute(count_sql).scalar_one()
-    return int(after - before)
-
-
-def _records_with_none_for_nan(df: pd.DataFrame) -> list[dict]:
-    """Coerce pandas NaN to None so TEXT columns land as NULL, not 'NaN'."""
-    return [
-        {k: (None if pd.isna(v) else v) for k, v in rec.items()}
-        for rec in df.to_dict(orient="records")
-    ]
 
 
 def _main() -> None:
