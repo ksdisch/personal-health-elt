@@ -15,6 +15,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyarrow>=17.0",
     "icalendar>=7.1.0",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]
@@ -24,6 +25,7 @@ dev = [
     "pytest-cov>=5.0",
     "mypy>=1.11",
     "types-python-dateutil>=2.9.0.20260508",
+    "types-PyYAML>=6.0",
 ]
 
 [tool.ruff]

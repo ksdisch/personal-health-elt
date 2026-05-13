@@ -1,0 +1,39 @@
+# Anomaly → notification rules.
+#
+# Evaluated after every weekly_load run against
+# `analytics_marts.mart_recovery_state`. Dedup is enforced by
+# `raw.notification_log`'s (rule_name, day) primary key, so re-running
+# weekly_load on the same day fires zero new notifications.
+#
+# Each rule has:
+#   name              unique identifier; (name, day) is the dedup key
+#   kind              one of: transition_to, consecutive
+#   signal            value of `recovery_signal` to match
+#                     (well_recovered / neutral / strained / insufficient_data)
+#   severity          one of: info, warning, critical
+#                     `critical` bypasses Pushover quiet hours (priority 1)
+#   message_template  Python str.format() string. Available variables:
+#                     {day}, {signal}, {hrv_ms}, {acwr}, {rhr_bpm}
+#                     Numeric values are pre-formatted; use plain {var}
+#                     (not {var:.0f}). Missing values render as "n/a".
+#   days              REQUIRED for kind=consecutive — streak length
+#
+# Rule semantics:
+#   transition_to: fires on the day signal flips INTO `signal` (yesterday
+#                  was anything else, today matches). Suppresses re-fire
+#                  while the streak continues.
+#   consecutive:   fires on the day the last N rows JUST reached length N
+#                  (so a 4-day streak fires once on day 3, not on day 4).
+
+- name: red_transition
+  kind: transition_to
+  signal: strained
+  severity: warning
+  message_template: "Recovery flipped to {signal} today ({day}). HRV {hrv_ms}ms, ACWR {acwr}, RHR {rhr_bpm}bpm."
+
+- name: three_strained_days
+  kind: consecutive
+  signal: strained
+  days: 3
+  severity: critical
+  message_template: "3rd consecutive strained day ({day}). HRV {hrv_ms}ms, ACWR {acwr}. Consider a rest day."

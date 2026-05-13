@@ -33,6 +33,7 @@ from ingest.config import RAW_DATA_PATH
 from ingest.loaders.batch import BatchResult, load_folder
 from ingest.loaders.calendar_google import CalendarLoadResult, load_calendar_daily
 from ingest.loaders.weather_openweather import WeatherLoadResult, load_weather_daily
+from ingest.notifications.notify import NotifyResult, notify_on_state_change
 
 # How far back to backfill weather on every flow run. Weather data is
 # small and immutable for past dates; a 14-day window cheaply re-covers
@@ -102,6 +103,18 @@ class DbtBuildError(RuntimeError):
 
 
 _STDERR_TAIL_LINES = 20
+
+
+@task(retries=1, retry_delay_seconds=30)
+def notify_state_changes() -> NotifyResult:
+    """Evaluate notification rules against mart_recovery_state.
+
+    Non-fatal: caller wraps this in try/except so a missing rules file
+    or transport outage never blocks the rest of the flow. Dedup via
+    raw.notification_log's (rule_name, day) PK means re-runs on the same
+    day fire zero new notifications.
+    """
+    return notify_on_state_change()
 
 
 @task(retries=2, retry_delay_seconds=60)
@@ -221,6 +234,32 @@ def weekly_load() -> dict[str, int | None]:
         summary["dbt_exit_code"] = None
     else:
         summary["dbt_exit_code"] = run_dbt_build()
+
+    # Notifications run AFTER dbt build because they read the analytics
+    # mart, which only reflects today's CSVs after the build. Same
+    # non-fatal pattern as weather/calendar: a missing rules file, a
+    # Pushover outage, or a fresh DB with no mart shouldn't kill the
+    # run.
+    try:
+        notify = notify_state_changes()
+    except Exception:
+        log.exception("notify_state_changes failed; continuing")
+        notify = NotifyResult(
+            notifications_sent=0,
+            notifications_deduped=0,
+            rules_evaluated=0,
+            rows_read=0,
+            skipped=True,
+            errors=["task raised"],
+        )
+
+    summary["notifications_sent"] = notify.notifications_sent
+    summary["notifications_deduped"] = notify.notifications_deduped
+    summary["notifications_skipped"] = int(notify.skipped)
+    summary["notification_errors"] = len(notify.errors)
+
+    if notify.errors:
+        log.error("notify: %d transport error(s): %s", len(notify.errors), notify.errors)
 
     log.info("weekly_load summary: %s", json.dumps(summary, default=str))
     return summary

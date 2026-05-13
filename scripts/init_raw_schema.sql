@@ -161,3 +161,27 @@ CREATE INDEX IF NOT EXISTS calendar_daily_day_idx ON raw.calendar_daily (day);
 
 COMMENT ON TABLE raw.calendar_daily IS
     'Per-day calendar density (timed event count / hours / first / last) parsed from a Google Calendar secret iCal URL. Recurring events expanded into instances before aggregation.';
+
+-- Notification ledger. One row per (rule, day) once a rule has fired.
+-- The notifier claims a row via INSERT … ON CONFLICT DO NOTHING before
+-- making any transport call; if rowcount == 0, the rule already fired
+-- today and the send is skipped. This is the only dedup mechanism, so
+-- re-running weekly_load on the same day fires zero new notifications.
+-- No FK to a rules table (rules live in YAML) and no FK to the mart
+-- (the mart is dbt-managed and we don't want a cross-schema FK).
+CREATE TABLE IF NOT EXISTS raw.notification_log (
+    rule_name TEXT NOT NULL,
+    day       DATE NOT NULL,
+    severity  TEXT NOT NULL,
+    signal    TEXT,
+    message   TEXT NOT NULL,
+    transport TEXT NOT NULL,
+    sent_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (rule_name, day)
+);
+
+CREATE INDEX IF NOT EXISTS notification_log_day_idx
+    ON raw.notification_log (day);
+
+COMMENT ON TABLE raw.notification_log IS
+    'Notifications already fired by the anomaly pipeline. (rule_name, day) PK guarantees once-per-day dedup; re-running weekly_load is a no-op.';
