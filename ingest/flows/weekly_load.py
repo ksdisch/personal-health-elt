@@ -19,16 +19,31 @@ ON CONFLICT DO NOTHING handles row-level overlaps.
 from __future__ import annotations
 
 import argparse
+import logging
 import subprocess
 from pathlib import Path
 
 from prefect import flow, get_run_logger, task
+from prefect.exceptions import MissingContextError
 from prefect.schedules import Cron
 
 from ingest.config import RAW_DATA_PATH
 from ingest.loaders.batch import BatchResult, load_folder
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _logger() -> logging.Logger:
+    """Prefect run logger when inside a flow/task context, else stdlib.
+
+    Lets the @task functions be called directly (`.fn(...)`) from tests
+    or ad-hoc scripts without a Prefect runtime. Inside a flow, logs
+    route to the Prefect UI as expected.
+    """
+    try:
+        return get_run_logger()  # type: ignore[return-value]
+    except MissingContextError:
+        return logging.getLogger(__name__)
 
 
 @task(retries=1, retry_delay_seconds=30)
@@ -41,10 +56,25 @@ def load_drop_folder(drop_dir: Path) -> BatchResult:
     return load_folder(drop_dir)
 
 
-@task
+class DbtBuildError(RuntimeError):
+    """Raised when `dbt build` exits non-zero. Triggers Prefect retry."""
+
+
+_STDERR_TAIL_LINES = 20
+
+
+@task(retries=2, retry_delay_seconds=60)
 def run_dbt_build() -> int:
-    """Trigger `dbt build` via subprocess. Returns the exit code (0 = success)."""
-    log = get_run_logger()
+    """Trigger `dbt build` via subprocess. Returns 0 on success; raises
+    DbtBuildError on non-zero exit so Prefect's retry logic kicks in.
+
+    After 3 total attempts (initial + 2 retries) the task fails terminally,
+    Prefect propagates the exception, the flow run is marked failed, and
+    the CLI invocation exits non-zero. The last `_STDERR_TAIL_LINES` of
+    dbt stderr are logged at ERROR before each raise so the alert is in
+    the Prefect UI / structured log without dumping a full stack trace.
+    """
+    log = _logger()
     cmd = [
         "uv",
         "run",
@@ -56,14 +86,29 @@ def run_dbt_build() -> int:
         str(PROJECT_ROOT / "transform"),
     ]
     log.info("Running: %s", " ".join(cmd))
-    proc = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
+    proc = subprocess.run(
+        cmd,
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stderr or "").splitlines()[-_STDERR_TAIL_LINES:])
+        log.error(
+            "dbt build failed (rc=%s). stderr tail:\n%s",
+            proc.returncode,
+            tail or "(empty)",
+        )
+        raise DbtBuildError(f"dbt build failed with rc={proc.returncode}")
+    log.info("dbt build succeeded")
     return proc.returncode
 
 
 @flow(name="weekly-health-load")
 def weekly_load() -> dict[str, int | None]:
     """End-to-end weekly refresh: load CSVs → dbt build → return summary."""
-    log = get_run_logger()
+    log = _logger()
     result = load_drop_folder(RAW_DATA_PATH)
 
     summary: dict[str, int | None] = {
