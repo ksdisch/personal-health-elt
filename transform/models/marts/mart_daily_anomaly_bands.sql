@@ -36,16 +36,12 @@ bands as (
         day,
         metric,
         value,
-        avg(value) over (
-            partition by metric
-            order by day
-            rows between 28 preceding and 1 preceding
-        ) as rolling_mean,
-        stddev_samp(value) over (
-            partition by metric
-            order by day
-            rows between 28 preceding and 1 preceding
-        ) as rolling_std
+        avg(value)
+            {{ rolling_trailing(28, partition_by='metric', inclusive=false) }}
+            as rolling_mean,
+        stddev_samp(value)
+            {{ rolling_trailing(28, partition_by='metric', inclusive=false) }}
+            as rolling_std
     from combined
 )
 

@@ -35,12 +35,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** S
 - **Added:** 2026-05-12
 
-### [Refactor] Extract rolling-window pattern into a dbt macro
-- **Why:** `mart_training_load.sql` and `mart_daily_anomaly_bands.sql` compute trailing N-day windows with identical `rows between N preceding and 1 preceding` syntax. Adding a third consumer (e.g. Zone 2 trailing minutes on the readiness page) will mean a third copy-paste.
-- **Acceptance:** New macro `transform/macros/rolling_trailing.sql` accepts `(column, window_days, partition_by)`. Both existing marts refactored to use it; `dbt build` produces row-for-row identical output (verify via a checksum diff before/after).
-- **Size:** M
-- **Added:** 2026-05-11
-
 ### [Refactor] Unify Postgres connection helper across ingest + app
 - **Why:** `app/lib/queries.py` uses a SQLAlchemy `_engine()` factory while `ingest/loaders/*.py` calls `psycopg.connect(DATABASE_URL)` directly. Two ways to configure connection params, two places to debug auth failures, two places to update when secrets rotate.
 - **Acceptance:** New `ingest/db.py` exposes `get_engine()` (cached) and `get_connection()` (raw psycopg). Loaders + `app/lib/queries.py` both import from it. `DATABASE_URL` parsing happens in exactly one place; existing tests still pass.
@@ -152,6 +146,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Refactor] Extract rolling-window pattern into a dbt macro
+- **Why:** `mart_training_load.sql` and `mart_daily_anomaly_bands.sql` carried duplicated `rows between N preceding and …` window syntax. Adding a third consumer would have meant a third copy-paste.
+- **Acceptance:** New macro `transform/macros/rolling_trailing.sql`; both existing marts refactored; `dbt build` produces row-for-row identical output (verify via diff before/after).
+- **Size:** M
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `refactor/rolling-trailing-macro`. New macro `rolling_trailing(window_days, partition_by=none, order_by='day', inclusive=true)`. The `inclusive` flag covers the two distinct flavors actually in use: inclusive (`rows between (N-1) preceding and current row` — today is part of its own rolling average, used by `mart_training_load.acute_load`/`chronic_load`/`zone_2_min_7d`/`strength_*_7d`) and exclusive (`rows between N preceding and 1 preceding` — today is excluded from its own baseline, used by `mart_daily_anomaly_bands.rolling_mean`/`rolling_std`). The macro returns just the `over (...)` clause so callers keep their aggregation function (sum / avg / stddev_samp) inline. Verification: ran `pg_dump`-style COPY of both marts before refactor, refactored, ran full `dbt build` (PASS=117/117), exported again, byte-compared with `diff` — **zero rows changed**. Folded in a bug fix for `tests/conftest.py:_cleanup_raw_at_session_end` — it was unconditionally `TRUNCATE raw.file_inventory CASCADE` at the end of every pytest session, which silently wiped local real data on every `uv run pytest`. Now gated on `CI=true` env var (set automatically by GitHub Actions) so CI's empty-schema invariant still holds without destroying developer Postgres state.
 
 ### [Improvement] Per-metric observability in `weekly_load` flow
 - **Why:** `weekly_load.py` summarized `files_loaded` + `rows_inserted` in aggregate. On a partial failure it was impossible to tell from logs which metric family (HR, sleep, workouts) was broken or which CSV was misbehaving.

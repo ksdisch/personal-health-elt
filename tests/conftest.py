@@ -9,6 +9,7 @@ on developer machines without docker compose up.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -53,14 +54,22 @@ def clean_raw_quantities(pg_engine: Engine) -> Engine:
 
 @pytest.fixture(scope="session", autouse=True)
 def _cleanup_raw_at_session_end(pg_engine: Engine):
-    """Wipe raw.* once the whole session finishes.
+    """Wipe raw.* once the whole session finishes — CI ONLY.
 
     CI runs `pytest` and `dbt build` in the same job against the same
-    Postgres service container. Without this, the last integration
+    Postgres service container. Without cleanup, the last integration
     test's data would leak into dbt build and the marts would process
     a tiny synthetic dataset instead of an empty one. Keeps the dbt
     build step honest as a smoke test of model SQL compilation.
+
+    Gated on the `CI` env var (set automatically by GitHub Actions) so
+    a developer running `uv run pytest` locally against their docker
+    compose Postgres does NOT have their real export data wiped at the
+    end of every test session. Local devs who genuinely want the wipe
+    can opt in with `CI=true uv run pytest`.
     """
     yield
+    if os.environ.get("CI", "").lower() != "true":
+        return
     with pg_engine.begin() as conn:
         conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))

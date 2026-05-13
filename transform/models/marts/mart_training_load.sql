@@ -68,15 +68,12 @@ rolled as (
         training_load,
         strength_sessions,
         strength_min,
-        sum(zone_2_min)         over w7  as zone_2_min_7d,
-        sum(strength_sessions)  over w7  as strength_sessions_7d,
-        sum(strength_min)       over w7  as strength_min_7d,
-        avg(training_load)      over w7  as acute_load,
-        avg(training_load)      over w28 as chronic_load
+        sum(zone_2_min)         {{ rolling_trailing(7) }}  as zone_2_min_7d,
+        sum(strength_sessions)  {{ rolling_trailing(7) }}  as strength_sessions_7d,
+        sum(strength_min)       {{ rolling_trailing(7) }}  as strength_min_7d,
+        avg(training_load)      {{ rolling_trailing(7) }}  as acute_load,
+        avg(training_load)      {{ rolling_trailing(28) }} as chronic_load
     from filled
-    window
-        w7  as (order by day rows between 6  preceding and current row),
-        w28 as (order by day rows between 27 preceding and current row)
 )
 
 select
