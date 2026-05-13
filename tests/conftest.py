@@ -49,3 +49,18 @@ def clean_raw_quantities(pg_engine: Engine) -> Engine:
     with pg_engine.begin() as conn:
         conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))
     return pg_engine
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_raw_at_session_end(pg_engine: Engine):
+    """Wipe raw.* once the whole session finishes.
+
+    CI runs `pytest` and `dbt build` in the same job against the same
+    Postgres service container. Without this, the last integration
+    test's data would leak into dbt build and the marts would process
+    a tiny synthetic dataset instead of an empty one. Keeps the dbt
+    build step honest as a smoke test of model SQL compilation.
+    """
+    yield
+    with pg_engine.begin() as conn:
+        conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))
