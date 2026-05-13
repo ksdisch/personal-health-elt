@@ -9,6 +9,12 @@ Validates the two-level idempotency contract on raw.quantities:
      samples — the ledger doesn't help here, only the row-level guard
      does.
 
+Assertions are written as *deltas* against counts captured before the
+test runs, so the suite is safe to run against a populated local
+database — see the `raw_test_engine` fixture in conftest. CSV
+timestamps use a far-future year so the synthetic content cannot
+collide with a real Apple Health export.
+
 The unit tests in `test_quantities_loader.py` mock the database; this
 file is the first that runs against a real Postgres. The conftest
 fixture skips if no Postgres is reachable, so this file is a no-op on
@@ -41,18 +47,27 @@ def _write_csv(path: Path, rows: list[str]) -> Path:
     return path
 
 
-def test_double_load_is_noop_via_file_hash_ledger(
-    clean_raw_quantities: Engine, tmp_path: Path
-) -> None:
-    """Second run of the same file: 0 rows inserted, ledger has 1 entry."""
-    engine = clean_raw_quantities
+def _counts(engine: Engine) -> tuple[int, int]:
+    """(raw.quantities count, raw.file_inventory count) snapshot."""
+    with engine.connect() as conn:
+        return (
+            conn.execute(text("SELECT COUNT(*) FROM raw.quantities")).scalar_one(),
+            conn.execute(text("SELECT COUNT(*) FROM raw.file_inventory")).scalar_one(),
+        )
+
+
+def test_double_load_is_noop_via_file_hash_ledger(raw_test_engine: Engine, tmp_path: Path) -> None:
+    """Second run of the same file: 0 rows inserted, ledger gains 1 entry."""
+    engine = raw_test_engine
     csv = _write_csv(
         tmp_path / "rhr.csv",
         [
-            _row("2026-03-21 07:00:40 +0000", 70.0),
-            _row("2026-03-21 08:00:40 +0000", 71.0),
+            _row("2099-03-21 07:00:40 +0000", 70.0),
+            _row("2099-03-21 08:00:40 +0000", 71.0),
         ],
     )
+
+    rows_before, files_before = _counts(engine)
 
     first = load_quantities_csv(csv, engine=engine)
     assert first.rows_inserted == 2, "first ingest should insert all rows"
@@ -62,16 +77,12 @@ def test_double_load_is_noop_via_file_hash_ledger(
     assert second.rows_inserted == 0, "second ingest must be a no-op"
     assert second.skipped is True, "loader should short-circuit on known SHA"
 
-    with engine.connect() as conn:
-        n_rows = conn.execute(text("SELECT COUNT(*) FROM raw.quantities")).scalar_one()
-        n_files = conn.execute(text("SELECT COUNT(*) FROM raw.file_inventory")).scalar_one()
-    assert n_rows == 2
-    assert n_files == 1
+    rows_after, files_after = _counts(engine)
+    assert rows_after - rows_before == 2
+    assert files_after - files_before == 1
 
 
-def test_overlapping_files_dedup_via_on_conflict(
-    clean_raw_quantities: Engine, tmp_path: Path
-) -> None:
+def test_overlapping_files_dedup_via_on_conflict(raw_test_engine: Engine, tmp_path: Path) -> None:
     """Two different files with overlapping samples.
 
     File A: 07:00, 08:00. File B: 08:00 (overlap), 09:00 (new).
@@ -79,22 +90,24 @@ def test_overlapping_files_dedup_via_on_conflict(
     either. The ON CONFLICT DO NOTHING on the natural key
     (metric_type, source_name, start_ts) drops the duplicate 08:00 row.
     """
-    engine = clean_raw_quantities
+    engine = raw_test_engine
 
     csv_a = _write_csv(
         tmp_path / "rhr_a.csv",
         [
-            _row("2026-03-21 07:00:40 +0000", 70.0),
-            _row("2026-03-21 08:00:40 +0000", 71.0),
+            _row("2099-03-21 07:00:40 +0000", 70.0),
+            _row("2099-03-21 08:00:40 +0000", 71.0),
         ],
     )
     csv_b = _write_csv(
         tmp_path / "rhr_b.csv",
         [
-            _row("2026-03-21 08:00:40 +0000", 71.0),  # overlap with A
-            _row("2026-03-21 09:00:40 +0000", 72.0),  # new
+            _row("2099-03-21 08:00:40 +0000", 71.0),  # overlap with A
+            _row("2099-03-21 09:00:40 +0000", 72.0),  # new
         ],
     )
+
+    rows_before, files_before = _counts(engine)
 
     a = load_quantities_csv(csv_a, engine=engine)
     assert a.rows_inserted == 2
@@ -105,8 +118,6 @@ def test_overlapping_files_dedup_via_on_conflict(
     assert b.rows_read == 2
     assert b.rows_inserted == 1, "ON CONFLICT must drop the 08:00 duplicate"
 
-    with engine.connect() as conn:
-        n_rows = conn.execute(text("SELECT COUNT(*) FROM raw.quantities")).scalar_one()
-        n_files = conn.execute(text("SELECT COUNT(*) FROM raw.file_inventory")).scalar_one()
-    assert n_rows == 3, "should be 3 unique (metric, source, start_ts) rows"
-    assert n_files == 2, "both files registered despite row overlap"
+    rows_after, files_after = _counts(engine)
+    assert rows_after - rows_before == 3, "should be 3 unique (metric, source, start_ts) rows"
+    assert files_after - files_before == 2, "both files registered despite row overlap"

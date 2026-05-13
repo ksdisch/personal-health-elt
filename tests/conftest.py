@@ -1,6 +1,6 @@
 """Shared pytest fixtures.
 
-The `pg_engine` and `clean_raw_quantities` fixtures spin up against the
+The `pg_engine` and `raw_test_engine` fixtures spin up against the
 project's Postgres (docker compose locally, the CI service container in
 GitHub Actions). Tests that depend on them skip gracefully when no
 Postgres is reachable, so the existing unit test suite keeps running
@@ -10,6 +10,7 @@ on developer machines without docker compose up.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -44,12 +45,57 @@ def pg_engine() -> Engine:
 
 
 @pytest.fixture
-def clean_raw_quantities(pg_engine: Engine) -> Engine:
-    """Truncate the file ledger (CASCADE drops dependent raw.* rows too)
-    before each test so integration tests start from a known state."""
+def raw_test_engine(pg_engine: Engine) -> Iterator[Engine]:
+    """Engine for integration tests with non-destructive per-test cleanup.
+
+    Snapshots the file_inventory SHAs that exist BEFORE the test, then
+    on teardown deletes only the SHAs the test introduced — and the
+    dependent rows in raw.quantities/workouts/categories that reference
+    those SHAs. Anything that was in the database before the test runs
+    is preserved.
+
+    Why this exists: the previous `clean_raw_quantities` fixture did a
+    blanket `TRUNCATE raw.file_inventory CASCADE` on every test, which
+    silently destroyed real Apple Health export data during routine
+    `uv run pytest` runs against a dev's local Postgres. The session-end
+    cleanup is already CI-gated; this fixture extends the same safety
+    guarantee to per-test setup so integration tests are safe to run
+    against a populated local database.
+    """
+    with pg_engine.connect() as conn:
+        before_shas = [
+            row[0] for row in conn.execute(text("SELECT sha256 FROM raw.file_inventory"))
+        ]
+
+    yield pg_engine
+
+    if not before_shas:
+        # Table was empty when the test started, so everything in it
+        # now is test-introduced. TRUNCATE CASCADE is the simplest
+        # catch-all and avoids passing an empty array to psycopg3
+        # (which can't infer the element type without a value).
+        with pg_engine.begin() as conn:
+            conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))
+        return
+
     with pg_engine.begin() as conn:
-        conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))
-    return pg_engine
+        params = {"before": before_shas}
+        conn.execute(
+            text("DELETE FROM raw.quantities WHERE source_sha256 <> ALL(:before)"),
+            params,
+        )
+        conn.execute(
+            text("DELETE FROM raw.workouts WHERE source_sha256 <> ALL(:before)"),
+            params,
+        )
+        conn.execute(
+            text("DELETE FROM raw.categories WHERE source_sha256 <> ALL(:before)"),
+            params,
+        )
+        conn.execute(
+            text("DELETE FROM raw.file_inventory WHERE sha256 <> ALL(:before)"),
+            params,
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)
