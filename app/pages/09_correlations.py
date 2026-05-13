@@ -60,6 +60,7 @@ df = df.sort_values("day").reset_index(drop=True).copy()
 # are today's values that predict tomorrow's outcome — no shift needed
 # for the predictor side.
 df["trimp_lag1"] = df["trimp"].shift(1)
+df["sleep_lag1"] = df["sleep_minutes"].shift(1)
 
 # Outcomes (right side): tomorrow's value, aligned onto today.
 df["hrv_lead1"] = df["hrv_ms"].shift(-1)
@@ -71,6 +72,7 @@ df = df[df["day"] >= df["day"].max() - pd.Timedelta(days=window_days - 1)].copy(
 
 LEADING = {
     "trimp_lag1": "Yesterday's TRIMP",
+    "sleep_lag1": "Yesterday's sleep",
     "rhr_bpm": "Today's RHR",
     "hrv_ms": "Today's HRV",
 }
@@ -209,7 +211,5 @@ with st.expander("Method + caveats"):
 - **Lag structure**: leading indicators are aligned to predict the *next
   day's* outcome — so each row in the underlying frame pairs day D's lead
   with day D+1's outcome, except yesterday's TRIMP which is day D-1 → D.
-- **Missing**: sleep duration → next-day HRV is the most-asked-about cell
-  and is blank until `ingest/loaders/categories.py` is implemented.
 """
     )

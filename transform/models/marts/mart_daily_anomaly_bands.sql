@@ -11,9 +11,6 @@
 -- the textbook framing for early-warning rolling z-scores.
 --
 -- Tall format: one row per (metric, day). Streamlit filters by metric.
--- Sleep duration will join here once the categories loader lands and a
--- mart_daily_sleep is built — same window function, just append a third
--- branch to the union.
 
 with combined as (
     select
@@ -29,6 +26,14 @@ with combined as (
         'hrv_ms'::text  as metric,
         hrv_ms          as value
     from {{ ref('mart_daily_hrv') }}
+
+    union all
+
+    select
+        night_date      as day,
+        'sleep_min'::text as metric,
+        time_asleep_min   as value
+    from {{ ref('mart_sleep_nights') }}
 ),
 
 bands as (
