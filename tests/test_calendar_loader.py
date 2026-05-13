@@ -139,6 +139,10 @@ def test_load_calendar_daily_skips_unchanged_ics(pg_engine: Engine) -> None:
     def _fake_fetch(_url: str) -> bytes:
         return _SAMPLE_ICS
 
+    # Initialize the cleanup variable so the `finally` block doesn't
+    # explode with UnboundLocalError if the test body raises before
+    # `first.sha256` is assigned (e.g., parser regression).
+    first_sha: str | None = None
     try:
         first = load_calendar_daily(
             lookback_days=30,
@@ -164,16 +168,18 @@ def test_load_calendar_daily_skips_unchanged_ics(pg_engine: Engine) -> None:
         assert second.rows_inserted == 0
 
     finally:
-        with engine.begin() as conn:
-            # Clean up: delete the calendar rows first (FK), then the ledger.
-            conn.execute(
-                text("DELETE FROM raw.calendar_daily WHERE source_sha256 = :s"),
-                {"s": first_sha},
-            )
-            conn.execute(
-                text("DELETE FROM raw.file_inventory WHERE sha256 = :s"),
-                {"s": first_sha},
-            )
+        if first_sha is not None:
+            with engine.begin() as conn:
+                # Clean up: dependent rows first (no ON DELETE CASCADE on FK),
+                # then the ledger.
+                conn.execute(
+                    text("DELETE FROM raw.calendar_daily WHERE source_sha256 = :s"),
+                    {"s": first_sha},
+                )
+                conn.execute(
+                    text("DELETE FROM raw.file_inventory WHERE sha256 = :s"),
+                    {"s": first_sha},
+                )
 
 
 def test_load_calendar_daily_different_body_inserts_fresh_rows(pg_engine: Engine) -> None:

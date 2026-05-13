@@ -34,6 +34,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+from dateutil.rrule import rrulestr
 from icalendar import Calendar
 from sqlalchemy.engine import Engine
 
@@ -127,10 +128,10 @@ def _expand_event(
             return []
         return [(start, start + duration, is_all_day)]
 
-    # icalendar.cal.Event has a .get_starts() in newer versions, but the
-    # most portable path is to expand RRULE manually via dateutil.
-    from dateutil.rrule import rrulestr
-
+    # icalendar.cal.Event doesn't expose a portable RRULE expander, so
+    # we hand the rule string to dateutil's rrulestr (imported at module
+    # scope).
+    #
     # rrulestr handles both an "RRULE:" prefix or just the rule body.
     rule_str = (
         rrule_prop.to_ical().decode("utf-8") if hasattr(rrule_prop, "to_ical") else str(rrule_prop)
@@ -138,10 +139,19 @@ def _expand_event(
     dtstart_aware = _ensure_aware(dtstart)
     rule = rrulestr(f"RRULE:{rule_str}", dtstart=dtstart_aware)
 
+    # EXDATE handling. icalendar returns a single vDDDLists when the
+    # event has one EXDATE property and a list of them when there are
+    # multiple. Normalize to a list before iterating; each vDDDLists
+    # exposes its dates via `.dts`. The previous shape — iterating the
+    # property directly — raised "TypeError: 'vDDDLists' object is not
+    # iterable" on any event with even one EXDATE.
     excluded_set: set[datetime] = set()
-    for exdate in component.get("exdate", []) or []:
-        for ex in getattr(exdate, "dts", []):
-            excluded_set.add(_ensure_aware(ex.dt))
+    exdate_prop = component.get("exdate")
+    if exdate_prop is not None:
+        exdate_lists = exdate_prop if isinstance(exdate_prop, list) else [exdate_prop]
+        for exdate_list in exdate_lists:
+            for ex in exdate_list.dts:
+                excluded_set.add(_ensure_aware(ex.dt))
 
     instances: list[tuple[datetime, datetime, bool]] = []
     for occ in rule:
@@ -159,6 +169,17 @@ def _expand_event(
     return instances
 
 
+_EMPTY_DAILY_COLUMNS: list[str] = [
+    "day",
+    "timed_event_count",
+    "timed_event_hours",
+    "all_day_event_count",
+    "first_event_local",
+    "last_event_local",
+    "source_sha256",
+]
+
+
 def parse_ics_to_daily(
     body: bytes,
     window_start: date,
@@ -171,8 +192,20 @@ def parse_ics_to_daily(
     least one event (timed or all-day). Days with no events get no row
     — downstream stg_calendar / mart_daily_context left-join handles
     "no calendar activity" naturally as NULL.
+
+    Tolerant of malformed bodies. icalendar's parser raises ValueError
+    on bytes that don't start with a VCALENDAR block (or have an
+    unparseable content line); we swallow that and return an empty
+    DataFrame so a bad response from the iCal URL does not crash the
+    weekly_load flow. The loader caller treats empty-DF as "no events
+    on any day in the window," which matches the desired behavior.
     """
-    cal = Calendar.from_ical(body)
+    try:
+        cal = Calendar.from_ical(body)
+    except ValueError:
+        logger.warning("calendar: malformed ICS body (sha=%s); returning empty", sha[:8])
+        return pd.DataFrame(columns=_EMPTY_DAILY_COLUMNS)
+
     rows: list[dict[str, object]] = []
 
     for component in cal.walk("VEVENT"):
@@ -196,17 +229,7 @@ def parse_ics_to_daily(
             )
 
     if not rows:
-        return pd.DataFrame(
-            columns=[
-                "day",
-                "timed_event_count",
-                "timed_event_hours",
-                "all_day_event_count",
-                "first_event_local",
-                "last_event_local",
-                "source_sha256",
-            ]
-        )
+        return pd.DataFrame(columns=_EMPTY_DAILY_COLUMNS)
 
     df = pd.DataFrame(rows)
     timed = df[~df["is_all_day"]]
