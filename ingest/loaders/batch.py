@@ -15,6 +15,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -65,9 +66,9 @@ def load_folder(
     folder: Path,
     *,
     engine: Engine | None = None,
-    quantities_loader: Callable[..., LoadResult] = load_quantities_csv,
-    workouts_loader: Callable[..., LoadResult] = load_workouts_csv,
-    categories_loader: Callable[..., LoadResult] = load_categories_csv,
+    quantities_loader: Callable[..., Any] = load_quantities_csv,
+    workouts_loader: Callable[..., Any] = load_workouts_csv,
+    categories_loader: Callable[..., Any] = load_categories_csv,
 ) -> BatchResult:
     """Walk folder recursively; load every recognized HK CSV.
 
@@ -87,7 +88,7 @@ def load_folder(
 
     for path in sorted(folder.rglob("*.csv")):
         kind = dispatch(path)
-        loader = loaders.get(kind)
+        loader = loaders.get(kind) if kind is not None else None
         if loader is not None:
             try:
                 result.loaded.append(loader(path, engine=engine))

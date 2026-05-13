@@ -135,7 +135,7 @@ def _coerce_bool(value: object) -> bool | None:
     if pd.isna(value) or value == "":
         return None
     try:
-        return bool(int(value))
+        return bool(int(value))  # type: ignore[call-overload]
     except (TypeError, ValueError):
         return None
 
@@ -212,7 +212,7 @@ def _upsert_rows(conn: Connection, df: pd.DataFrame) -> int:
     before = conn.execute(count_sql).scalar_one()
     conn.execute(stmt, records)
     after = conn.execute(count_sql).scalar_one()
-    return after - before
+    return int(after - before)
 
 
 def _records_with_none_for_nan(df: pd.DataFrame) -> list[dict]:
