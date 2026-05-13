@@ -65,11 +65,11 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
-### [Improvement] Integration test for two-level idempotency contract
-- **Why:** Existing tests mock the loaders at the unit level. No test runs a real CSV through a real Postgres twice and verifies the contract end-to-end: (a) second run is a no-op via the file-hash ledger, (b) partial failure leaves the ledger and rows in a consistent state, (c) overlap from two different files dedups via ON CONFLICT.
-- **Acceptance:** Pytest fixture spins up a Postgres (or uses the dev container); test ingests the same fixture CSV twice and asserts `rows_inserted == N` then `== 0`, `file_inventory` has exactly one row, no duplicate rows in `raw.quantities`. Runs against the service container from item 8.
-- **Size:** M
-- **Added:** 2026-05-11
+### [Improvement] Integration test for transaction-abort idempotency consistency
+- **Why:** The 2026-05-12 idempotency integration ship covered guarantees (a) ledger-skip on rerun and (c) ON CONFLICT row dedup across overlapping files. The third guarantee from the original BACKLOG entry — **(b) partial failure leaves the ledger and rows in a consistent state** — wasn't tested. Each loader writes the ledger row AND the data rows in one `engine.begin()` transaction (so an abort mid-insert rolls both back), but no test exercises the abort path. Without a test, a future refactor that splits the writes across two transactions could silently break the invariant.
+- **Acceptance:** Pytest integration test that forces a failure between file-ledger insert and row insert (e.g., monkeypatch `_upsert_rows` to raise after the ledger row is staged), asserts `file_inventory` count returns to zero and `raw.quantities` is unchanged. Runs against the existing CI Postgres service container.
+- **Size:** S
+- **Added:** 2026-05-12
 
 ### [Exploration] dbt snapshot for resting-HR baseline drift
 - **Why:** RHR shifts over months with fitness adaptation. Today `mart_recovery_state` compares "today vs. trailing 28d," but a proper SCD-2 snapshot would let downstream skills reason about "today vs. this-month's baseline" or surface inflection points (overtraining, illness onset). Open question: is the added complexity worth it for a single-user personal pipeline?
@@ -170,6 +170,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Improvement] Integration test for two-level idempotency contract
+- **Why:** Existing tests mocked the loaders at the unit level. No test ran a real CSV through a real Postgres twice and verified the contract end-to-end.
+- **Acceptance:** Pytest fixture spins up a Postgres (or uses the dev container); test ingests the same fixture CSV twice and asserts `rows_inserted == N` then `== 0`, `file_inventory` has exactly one row, no duplicate rows in `raw.quantities`. Runs against the CI service container.
+- **Size:** M
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `feat/idempotency-integration-test`. New `tests/conftest.py` exposes `pg_engine` (session-scoped, skips test gracefully when Postgres is unreachable, idempotently applies `scripts/init_raw_schema.sql`) and `clean_raw_quantities` (function-scoped, `TRUNCATE raw.file_inventory CASCADE` between tests). Two integration tests in `tests/test_idempotency_integration.py`: (1) `test_double_load_is_noop_via_file_hash_ledger` — same file twice → second run reports `rows_inserted=0, skipped=True`, ledger has 1 row, `raw.quantities` has 2; (2) `test_overlapping_files_dedup_via_on_conflict` — two distinct-SHA files sharing one row → both ledger entries land, `raw.quantities` has 3 (not 4) rows, confirming `ON CONFLICT DO NOTHING` on the natural key. Local run: pytest 53/53 (the 51 unit tests plus the 2 new integration tests). CI run: ditto against the postgres:16 service container. The third contract bullet from the original BACKLOG entry (partial-failure transaction-abort consistency) wasn't included — filed as a separate S follow-up.
 
 ### [Improvement] Add `.pre-commit-config.yaml` (ruff + mypy)
 - **Why:** CI lints on push but no local gate existed — issues were caught only after pushing a branch. For a portfolio repo, a pre-commit hook catches style + typing regressions before they hit a branch and also demonstrates dev-experience hygiene.
