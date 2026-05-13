@@ -477,6 +477,22 @@ models:
         description: Total daily precipitation (mm).
       - name: wind_max_mps
         description: Peak wind speed (m/s).
+      - name: timed_event_count
+        description: Number of non-all-day calendar events on this day. 0 when calendar is unconfigured.
+        tests:
+          - not_null
+      - name: timed_event_hours
+        description: Sum of timed-event durations (hours). 0 when calendar is unconfigured.
+        tests:
+          - not_null
+      - name: all_day_event_count
+        description: Number of all-day events covering this day.
+        tests:
+          - not_null
+      - name: first_event_local
+        description: Earliest timed-event start (local). NULL on days with no timed events.
+      - name: last_event_local
+        description: Latest timed-event end (local). NULL on days with no timed events.
 
 exposures:
   - name: weekly_health_review

@@ -36,3 +36,10 @@ def _maybe_float(s: str) -> float | None:
 OPENWEATHER_API_KEY: str | None = os.getenv("OPENWEATHER_API_KEY") or None
 OPENWEATHER_LAT: float | None = _maybe_float(os.getenv("OPENWEATHER_LAT", ""))
 OPENWEATHER_LON: float | None = _maybe_float(os.getenv("OPENWEATHER_LON", ""))
+
+# Google Calendar secret iCal URL (optional). Found in Google Calendar
+# Settings → "Settings for my calendars" → <calendar> → "Integrate
+# calendar" → "Secret address in iCal format". Anyone with this URL can
+# read your full calendar — store in .env, never commit it. Unset =
+# calendar loader no-ops; mart_daily_context's calendar columns stay NULL.
+CALENDAR_ICS_URL: str | None = os.getenv("CALENDAR_ICS_URL") or None

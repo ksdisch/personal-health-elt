@@ -31,12 +31,19 @@ from prefect.schedules import Cron
 
 from ingest.config import RAW_DATA_PATH
 from ingest.loaders.batch import BatchResult, load_folder
+from ingest.loaders.calendar_google import CalendarLoadResult, load_calendar_daily
 from ingest.loaders.weather_openweather import WeatherLoadResult, load_weather_daily
 
 # How far back to backfill weather on every flow run. Weather data is
 # small and immutable for past dates; a 14-day window cheaply re-covers
 # any prior-run miss without thrashing the API.
 _WEATHER_BACKFILL_DAYS = 14
+
+# Calendar lookback: a couple of months covers any backfill gap from a
+# skipped weekly_load and stays cheap on RRULE expansion. Calendar
+# events are mutable (you might add/remove events affecting past days),
+# so a longer window than weather is intentional.
+_CALENDAR_LOOKBACK_DAYS = 60
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -77,6 +84,17 @@ def load_weather() -> WeatherLoadResult:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=_WEATHER_BACKFILL_DAYS - 1)
     return load_weather_daily(start, end)
+
+
+@task(retries=1, retry_delay_seconds=60)
+def load_calendar() -> CalendarLoadResult:
+    """Pull the trailing `_CALENDAR_LOOKBACK_DAYS` of calendar density.
+
+    Same non-fatal pattern as weather: the loader skips silently when
+    CALENDAR_ICS_URL is unset, and the flow swallows other errors so a
+    Google iCal outage never blocks the dbt build.
+    """
+    return load_calendar_daily(lookback_days=_CALENDAR_LOOKBACK_DAYS)
 
 
 class DbtBuildError(RuntimeError):
@@ -148,6 +166,19 @@ def weekly_load() -> dict[str, int | None]:
             skipped=True,
         )
 
+    # Same non-fatal pattern for calendar.
+    try:
+        calendar = load_calendar()
+    except Exception:
+        log.exception("calendar fetch failed; continuing without it")
+        calendar = CalendarLoadResult(
+            rows_inserted=0,
+            days_aggregated=0,
+            sha256=None,
+            skipped=True,
+            skipped_unchanged=False,
+        )
+
     summary: dict[str, int | None] = {
         "files_loaded": result.files_loaded,
         "files_already_seen": result.files_already_loaded,
@@ -157,6 +188,10 @@ def weekly_load() -> dict[str, int | None]:
         "weather_days_fetched": weather.days_fetched,
         "weather_rows_inserted": weather.rows_inserted,
         "weather_skipped": int(weather.skipped),
+        "calendar_rows_inserted": calendar.rows_inserted,
+        "calendar_days_aggregated": calendar.days_aggregated,
+        "calendar_skipped": int(calendar.skipped),
+        "calendar_skipped_unchanged": int(calendar.skipped_unchanged),
     }
 
     # Per-kind breakdown is always logged so a flaky family (e.g. only
@@ -177,8 +212,12 @@ def weekly_load() -> dict[str, int | None]:
             json.dumps(result.errored_metric_types(), default=str),
         )
         summary["dbt_exit_code"] = None
-    elif result.total_rows_inserted == 0 and weather.rows_inserted == 0:
-        log.info("No new rows (HK or weather); skipping dbt build")
+    elif (
+        result.total_rows_inserted == 0
+        and weather.rows_inserted == 0
+        and calendar.rows_inserted == 0
+    ):
+        log.info("No new rows (HK, weather, or calendar); skipping dbt build")
         summary["dbt_exit_code"] = None
     else:
         summary["dbt_exit_code"] = run_dbt_build()

@@ -135,3 +135,29 @@ CREATE INDEX IF NOT EXISTS weather_date_idx ON raw.weather (obs_date);
 
 COMMENT ON TABLE raw.weather IS
     'Daily weather summaries from OpenWeather One Call 3.0. Units are the API''s "standard" (K / m/s / hPa / mm). Conversion to C / mph / etc. happens in stg_weather.';
+
+-- Cross-source enrichment: daily Google Calendar density aggregates.
+-- One row per (day, source_sha256). Populated by the calendar loader,
+-- which fetches the user's secret iCal URL once per flow, expands
+-- recurring events into instances, and rolls up into per-day counts +
+-- hours. File-level idempotency uses raw.file_inventory (SHA256 of the
+-- ICS response body), so an unchanged calendar short-circuits at the
+-- ledger check. When the ICS body changes (events added / removed),
+-- a new SHA produces a new set of (day, sha) rows; stg_calendar takes
+-- the latest SHA per day so the mart sees the freshest view.
+CREATE TABLE IF NOT EXISTS raw.calendar_daily (
+    day                  DATE NOT NULL,
+    timed_event_count    INTEGER NOT NULL DEFAULT 0,
+    timed_event_hours    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    all_day_event_count  INTEGER NOT NULL DEFAULT 0,
+    first_event_local    TIMESTAMP,
+    last_event_local     TIMESTAMP,
+    source_sha256        TEXT NOT NULL REFERENCES raw.file_inventory(sha256),
+    loaded_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (day, source_sha256)
+);
+
+CREATE INDEX IF NOT EXISTS calendar_daily_day_idx ON raw.calendar_daily (day);
+
+COMMENT ON TABLE raw.calendar_daily IS
+    'Per-day calendar density (timed event count / hours / first / last) parsed from a Google Calendar secret iCal URL. Recurring events expanded into instances before aggregation.';
