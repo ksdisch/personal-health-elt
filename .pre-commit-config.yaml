@@ -1,0 +1,38 @@
+# Local gates that mirror CI. Install once with:
+#   uv tool install pre-commit
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
+#
+# Why local hooks (language: system) instead of pinned upstream repos:
+#   - uses the project's own uv-managed venv, so ruff / mypy versions
+#     never drift between the hook and CI
+#   - no second install step, no second lockfile
+
+repos:
+  - repo: local
+    hooks:
+      # Fast checks run on every `git commit`.
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        stages: [pre-commit]
+
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run ruff format --check
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        stages: [pre-commit]
+
+      # Slower check — only runs on `git push`. Scoped to ingest/ to
+      # match CI; app/ mypy is filed as a follow-up backlog item.
+      - id: mypy-ingest
+        name: mypy ingest
+        entry: uv run mypy ingest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

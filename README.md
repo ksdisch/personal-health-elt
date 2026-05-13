@@ -183,6 +183,27 @@ uv run dbt build --project-dir transform --profiles-dir transform
 uv run streamlit run app/home.py
 ```
 
+## Pre-commit hooks (optional but recommended)
+
+Local gates that mirror CI — catch lint / format / type errors before
+they hit a branch. One-time install:
+
+```bash
+uv tool install pre-commit
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+After install, `git commit` runs `ruff check` + `ruff format --check`
+and `git push` adds `mypy ingest` (slower, so push-only). Configuration
+lives in `.pre-commit-config.yaml` at repo root.
+
+To run the hooks manually against all files:
+
+```bash
+pre-commit run --all-files          # pre-commit hooks (fast)
+pre-commit run --hook-stage pre-push --all-files
+```
+
 ## Scheduled refresh (optional)
 
 The Prefect flow `ingest.flows.weekly_load` walks `data/raw/`, loads any
