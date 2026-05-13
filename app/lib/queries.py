@@ -176,3 +176,21 @@ def sleep_stages() -> pd.DataFrame:
         _engine(),
         parse_dates=["night_date", "stage_start_local", "stage_end_local"],
     )
+
+
+@st.cache_data(ttl=300)
+def workout_hrr() -> pd.DataFrame:
+    """Per-workout heart-rate recovery (HRR).
+
+    One row per workout. `hrr_*s` columns are NULL when no post-workout
+    HR sample fell within tolerance of the target offset — leave them
+    NULL on the rendering side rather than imputing.
+    """
+    return pd.read_sql(
+        "SELECT activity_type, day_local, workout_start_local, "
+        "workout_end_local, peak_hr_bpm, hrr_30s, hrr_60s, hrr_120s "
+        "FROM analytics_marts.mart_workout_hrr "
+        "ORDER BY workout_start_local",
+        _engine(),
+        parse_dates=["day_local", "workout_start_local", "workout_end_local"],
+    )

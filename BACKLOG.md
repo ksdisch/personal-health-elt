@@ -89,11 +89,11 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
-### [Feature] Heart-rate recovery (HRR) mart — post-workout drop velocity
-- **Why:** ACWR is great for load, but HRR — how fast your HR drops in the 60s after a hard interval — is one of the strongest individual fitness markers and you already have the raw HR samples to compute it. Each workout becomes a fitness datapoint. Trending HRR over months shows aerobic-capacity gains in a way RHR alone cannot.
-- **Acceptance:** New mart `mart_workout_hrr` computed from `int_workout_hr_samples`: for each workout with a clear peak-HR moment, calculate HR drop at 30s / 60s / 120s post-peak. Joined to workout metadata so you can filter by activity type. New section on the Training Load page or a new "Fitness markers" page showing 30d/90d trend.
+### [Bug] `clean_raw_quantities` integration-test fixture wipes user's local Postgres
+- **Why:** PR #7's `tests/conftest.py::clean_raw_quantities` is function-scoped and does `TRUNCATE raw.file_inventory CASCADE` at the START of every integration test. The CASCADE wipes `raw.quantities`, `raw.workouts`, and `raw.categories` along with it — including the user's real export data. PR #12 fixed the session-end cleanup (gated on `CI=true`), but didn't address this function-scoped one. Discovered during PR J (HRR mart) verification: a routine `uv run pytest` between two `dbt build` runs silently destroyed 288K rows of real data; had to re-ingest from `data/raw/` to continue.
+- **Acceptance:** Integration tests run against a separate isolated table/schema so the user's real data is never touched. Options: (a) point the fixture at `raw_test.quantities` etc and have the loader optionally take a schema kwarg, (b) move integration tests into a transaction that rolls back, or (c) gate the fixture on a `--integration` pytest flag + change the assertions from "total count == N" to "this test's rows are present" so leftover real data doesn't break them. Pick the option that doesn't require modifying loader signatures.
 - **Size:** M
-- **Added:** 2026-05-11
+- **Added:** 2026-05-13
 
 ### [Feature] Auto-generated "Year in Review" report — quarterly + annual narrative
 - **Why:** Strava Wrapped is a viral moment because the data is in your hands as a story, not a dashboard. Once a quarter / once a year, generate a long-form HTML or PDF report: training volume trends, biggest gains, worst weeks, seasonal patterns, recovery story, top correlations discovered. Claude writes the narrative; the marts provide the numbers. Becomes a sharable artifact and a hell of a portfolio piece.
@@ -128,6 +128,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Heart-rate recovery (HRR) mart — post-workout drop velocity
+- **Why:** ACWR is great for load, but HRR — how fast your HR drops in the 60s after a hard interval — is one of the strongest individual fitness markers, and the raw HR samples to compute it were already in `int_workout_hr_samples`. HRR shifts months before resting HR does, so it's the leading aerobic-capacity signal.
+- **Acceptance:** New mart `mart_workout_hrr` with peak HR + HR drop at 30 / 60 / 120s post-workout, joined to workout metadata for activity-type filtering. New section on the Training Load page showing 30 / 90 day trend.
+- **Size:** M
+- **Added:** 2026-05-11
+- **Started:** 2026-05-13
+- **Completed:** 2026-05-13 — branch `feat/hrr-mart`. Mart computes peak_hr_bpm via `max(hr_bpm) GROUP BY workout` over `int_workout_hr_samples`, then range-joins `stg_workouts` to post-workout `stg_quantities` HeartRate samples in the 180s window. Per-target `(array_agg(... order by abs(secs - target)))[1]` argmin picks the closest sample to each target offset. Tolerance gates (±15s for 30s/60s targets, ±30s for 120s) keep `hrr_*s` NULL when no sample falls within range — better than silently mislabeling. Real-data results on 77 workouts: 16 have a valid `hrr_60s` (peak ≥ 140 AND sample within tolerance), median drop = 40.5 bpm (range 29–64). New `app/lib/queries.py::workout_hrr()` + Training Load page section showing all-time / 30d / 90d median HRR_60s as metric cards plus a per-workout scatter chart sized by peak HR, colored by activity type. dbt schema docs + 5 `not_null` tests on the new mart. Local: dbt build 23/23 PASS (1 seed, 2 tables, 18 tests, 2 views — full `+mart_workout_hrr` lineage), pytest 79/79, mypy clean, pre-commit hooks pass. **Mid-PR: discovered and filed a separate bug** — `tests/conftest.py::clean_raw_quantities` is destructive on local runs (TRUNCATE CASCADE wiped 288K rows of real data during this PR's verification; re-ingested from `data/raw/` to continue). Bug filed above.
 
 ### [Refactor] Unify Postgres connection helper across ingest + app
 - **Why:** Six call sites all wrote `create_engine(DATABASE_URL)` independently — loaders (4), `app/lib/queries.py`, `tests/conftest.py`, and `scripts/weekly_health_review.py`. Two ways to configure connection params, two places to debug auth failures, two places to update when secrets rotate.
