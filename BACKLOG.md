@@ -35,11 +35,11 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-12
 
-### [Improvement] README live-app link + `docs/DEPLOYMENT.md`
-- **Why:** The README is portfolio-grade but has no "see it live" link and no deployment instructions. Hiring managers can't poke at the Streamlit app, and a fork can't reproduce the deployment story.
-- **Acceptance:** README gains a "Live app" hero near the top with a deployed Streamlit URL (Streamlit Cloud / Fly / Railway). `docs/DEPLOYMENT.md` documents env vars, secrets, the Postgres provisioning step, the cold-start dataset import, and the redeploy path.
-- **Size:** M
-- **Added:** 2026-05-11
+### [Improvement] Fill in the README "Live app" URL after the cloud deploy
+- **Why:** `docs/DEPLOYMENT.md` (2026-05-12 ship) covers every step needed to deploy the Streamlit app, but the operator still has to actually deploy it and paste the resulting URL into the README's "Live app" section (currently a TODO placeholder). Required for the portfolio link to actually work for hiring managers.
+- **Acceptance:** Cloud Postgres provisioned (Supabase / Neon / Railway), `scripts/init_raw_schema.sql` applied against it, ingest pipeline run against the cloud DATABASE_URL, Streamlit Cloud (or Fly / Railway) app deployed and reachable. README's `## Live app` TODO replaced with the actual URL + any caveats about data freshness. Total time once accounts are signed up: ~30 minutes per the deployment guide.
+- **Size:** S
+- **Added:** 2026-05-12
 
 ### [Refactor] Extract rolling-window pattern into a dbt macro
 - **Why:** `mart_training_load.sql` and `mart_daily_anomaly_bands.sql` compute trailing N-day windows with identical `rows between N preceding and 1 preceding` syntax. Adding a third consumer (e.g. Zone 2 trailing minutes on the readiness page) will mean a third copy-paste.
@@ -158,6 +158,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Improvement] README live-app link + `docs/DEPLOYMENT.md`
+- **Why:** The README was portfolio-grade but had no "see it live" link and no deployment instructions. Hiring managers couldn't poke at the Streamlit app, and a fork couldn't reproduce the deployment story.
+- **Acceptance:** README "Live app" hero near the top + `docs/DEPLOYMENT.md` covering env vars, secrets, Postgres provisioning, cold-start, redeploy.
+- **Size:** M
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `docs/deployment-guide`. New `docs/DEPLOYMENT.md` (~250 lines) covers: 9 sections walking through prerequisites, managed Postgres provisioning (Supabase recommended for free tier, Neon and Railway as alternatives), raw-schema init against the cloud DB, cold-start ingest (load CSVs + run `dbt build` against cloud DATABASE_URL — idempotent), pointing dbt at cloud Postgres, three Streamlit deploy targets (Streamlit Community Cloud, Fly.io, Railway) with full step-by-steps including secrets-as-TOML, redeploy path, recurring ingest options (manual, launchd/cron, future Prefect Cloud), troubleshooting matrix, and monthly cost expectations. The README gets a `## Live app` section near the top with a TODO placeholder + link to DEPLOYMENT.md — the actual URL fill-in is filed as a follow-up since I can't deploy on the operator's behalf (needs their accounts and credentials). Verification: ruff/mypy/pytest 61/61 unchanged (docs-only change), pre-commit hooks pass.
 
 ### [Refactor] Extract shared idempotency helpers across loaders
 - **Why:** Three loaders (`quantities.py`, `workouts.py`, `categories.py`) carried near-identical `_already_loaded`, `_record_file`, `_upsert_rows`, and `_records_with_none_for_nan` private functions. Adding a fourth source (weather, calendar, Oura) would have meant a fourth copy.
