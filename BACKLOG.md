@@ -17,12 +17,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** S
 - **Added:** 2026-05-11
 
-### [Feature] Add source freshness checks on raw.{quantities,categories,workouts}
-- **Why:** `transform/models/sources.yml` declares all three raw tables but sets no `freshness:` or `loaded_at_field:`. For an ELT pipeline where ingest runs on a schedule, stale upstream data is currently a silent failure mode — a dead loader produces no warning until a Streamlit page renders empty.
-- **Acceptance:** `loaded_at_field: loaded_at` and `freshness: {warn_after: {count: 2, period: day}, error_after: {count: 7, period: day}}` set on all three sources; `dbt source freshness` runs cleanly today and would warn/error if loads stop.
-- **Size:** M
-- **Added:** 2026-05-11
-
 ### [Improvement] Add `.pre-commit-config.yaml` (ruff + mypy)
 - **Why:** CI lints on push but no local gate exists — issues are caught only after pushing a branch. For a portfolio repo, a pre-commit hook catches style + typing regressions before they hit a branch and also demonstrates dev-experience hygiene.
 - **Acceptance:** `.pre-commit-config.yaml` at repo root runs `ruff check`, `ruff format --check`, and `mypy ingest app` on `pre-commit` and `pre-push`. Hook install step documented in README under "Local development."
@@ -182,6 +176,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Add source freshness checks on raw.{quantities,categories,workouts}
+- **Why:** `transform/models/sources.yml` declared all three raw tables but set no `freshness:` or `loaded_at_field:`. For an ELT pipeline where ingest runs on a schedule, stale upstream data was a silent failure mode — a dead loader produced no warning until a Streamlit page rendered empty.
+- **Acceptance:** `loaded_at_field: loaded_at` and `freshness: {warn_after: {count: 2, period: day}, error_after: {count: 7, period: day}}` set on all three sources; `dbt source freshness` runs cleanly and would warn/error if loads stop.
+- **Size:** M
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `feat/source-freshness`. Freshness placed at the source level (not per-table) since all three loaders share the weekly Sunday cadence. Real-data run on local Postgres surfaced immediate signal: `raw.categories` PASS (loaded recently during the sleep feature work), `raw.quantities` and `raw.workouts` ERROR STALE (>7 days since last ingest). That's the feature working as intended — those metric families need a re-export. Not wired into CI's `dbt build` step because (a) `dbt build` doesn't evaluate freshness by default and (b) CI runs against an empty-schema service container where freshness would always error.
 
 ### [Improvement] Tighten CI: mypy, coverage, and `dbt build` against a test Postgres
 - **Why:** `.github/workflows/ci.yml` ran ruff + pytest + `dbt parse` only. mypy config existed in `pyproject.toml` but was unused; `pytest-cov` was a dev dep but no coverage was produced; `dbt parse` didn't execute models, so type mismatches in compiled SQL slipped through to user-verify time (e.g., the bare `asleep` value the synthetic-data sandbox missed during the sleep feature ship).
