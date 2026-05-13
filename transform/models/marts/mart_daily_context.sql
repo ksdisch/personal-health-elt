@@ -1,32 +1,47 @@
--- Daily external-context mart — first cut of cross-source enrichment.
+-- Daily external-context mart. Grain: one row per calendar day in any
+-- enrichment source (weather or calendar). Downstream correlation
+-- analysis joins this to mart_recovery_state on `day`.
 --
--- Grain: one row per calendar day. Joins external factors (today:
--- weather only) onto a date spine so downstream correlation analysis
--- can ask questions like:
---   "does my recovery score drop on hot nights?"
---   "do I sleep worse after rainy / low-pressure days?"
---   "is HRV correlated with overnight temp?"
+-- Currently joins weather + calendar density. Future loaders (Oura
+-- ring temp, HomeKit) plug in as additional left joins on the same
+-- day spine. As long as the spine covers every day either source has
+-- touched, growth is additive — no breaking changes for consumers.
 --
--- Deliberately a SEPARATE mart from mart_recovery_state. The latter is
--- the public API consumed by the weekly-health-review Claude skill;
--- mixing external-source columns into it would broaden that contract.
--- Page 09 (correlations) and any other consumer joins the two marts on
--- `day` rather than reading them as one.
---
--- As calendar / Oura / HomeKit loaders land, additional left joins (or
--- tall-format unions) plug in here. The mart_daily_context contract is
--- "everything downstream of staging that describes external context
--- for the day."
+-- Deliberately a SEPARATE mart from mart_recovery_state. The latter
+-- is the public API consumed by the weekly-health-review Claude
+-- skill; mixing external columns into it would broaden that
+-- contract. Page 09 (correlations) joins the two marts on `day`.
+
+with day_spine as (
+    -- Union the day columns from every enrichment source. Each source
+    -- is optional (empty when its env var is unset), so the spine is
+    -- itself optional — an empty spine means the entire mart is empty
+    -- (loaders are no-ops, page 09 shows the info card). Intended.
+    select day from {{ ref('stg_weather') }}
+    union
+    select day from {{ ref('stg_calendar') }}
+)
 
 select
-    day,
-    temp_min_c,
-    temp_max_c,
-    temp_afternoon_c,
-    temp_night_c,
-    humidity_afternoon,
-    cloud_cover_afternoon,
-    precip_total_mm,
-    wind_max_mps
-from {{ ref('stg_weather') }}
-order by day
+    s.day,
+
+    -- Weather columns ----------------------------------------------------
+    w.temp_min_c,
+    w.temp_max_c,
+    w.temp_afternoon_c,
+    w.temp_night_c,
+    w.humidity_afternoon,
+    w.cloud_cover_afternoon,
+    w.precip_total_mm,
+    w.wind_max_mps,
+
+    -- Calendar density columns ------------------------------------------
+    coalesce(c.timed_event_count, 0)   as timed_event_count,
+    coalesce(c.timed_event_hours, 0.0) as timed_event_hours,
+    coalesce(c.all_day_event_count, 0) as all_day_event_count,
+    c.first_event_local,
+    c.last_event_local
+from day_spine s
+left join {{ ref('stg_weather') }}  w on w.day = s.day
+left join {{ ref('stg_calendar') }} c on c.day = s.day
+order by s.day

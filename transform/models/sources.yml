@@ -29,3 +29,12 @@ sources:
         # be empty (no API key configured) — an empty table would otherwise
         # trip the source-level "no rows returned" error.
         freshness: null
+      - name: calendar_daily
+        description: >
+          Daily Google Calendar density (timed event count / hours /
+          first / last) parsed from a secret iCal URL. Optional
+          cross-source enrichment — populated only when
+          CALENDAR_ICS_URL is set. Recurring events are expanded into
+          instances before per-day aggregation. PK is (day,
+          source_sha256); stg_calendar picks the latest SHA per day.
+        freshness: null

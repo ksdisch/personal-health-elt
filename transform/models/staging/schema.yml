@@ -100,6 +100,34 @@ models:
       - name: wind_max_dir_deg
         description: Peak wind direction (degrees, 0-359).
 
+  - name: stg_calendar
+    description: >
+      1:1 reflection of raw.calendar_daily, deduplicated to one row per
+      day by picking the latest source_sha256. Optional source — empty
+      when CALENDAR_ICS_URL is not configured.
+    columns:
+      - name: day
+        description: Local calendar date in America/Chicago.
+        tests:
+          - not_null
+          - unique
+      - name: timed_event_count
+        description: Number of non-all-day events that started on this day.
+        tests:
+          - not_null
+      - name: timed_event_hours
+        description: Sum of timed-event durations on this day (hours).
+        tests:
+          - not_null
+      - name: all_day_event_count
+        description: Number of all-day events that cover this day.
+        tests:
+          - not_null
+      - name: first_event_local
+        description: Earliest timed-event start time (local naive datetime). NULL on all-day-only days.
+      - name: last_event_local
+        description: Latest timed-event end time (local naive datetime). NULL on all-day-only days.
+
   - name: stg_categories
     description: >
       1:1 reflection of raw.categories with (a) HKCategoryTypeIdentifier prefix
