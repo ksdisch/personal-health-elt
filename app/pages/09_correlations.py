@@ -357,5 +357,10 @@ with st.expander("Method + caveats"):
 - **Lag structure**: leading indicators are aligned to predict the *next
   day's* outcome — so each row in the underlying frame pairs day D's lead
   with day D+1's outcome, except yesterday's TRIMP which is day D-1 → D.
+- **External factors (lower grid)**: same lag idea, inverted framing —
+  every weather column is shifted back one day, so each row pairs
+  yesterday's weather with today's recovery / HRV / sleep. The
+  pairing is on an `inner` join, so the effective window can be
+  shorter than the upper grid until the weather backfill catches up.
 """
     )
