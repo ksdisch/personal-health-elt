@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from app.lib.queries import daily_signals
+from app.lib.queries import daily_context, daily_signals
 
 st.title("Lagged Correlations")
 st.caption(
@@ -197,6 +197,152 @@ st.dataframe(
         "p-value": st.column_config.NumberColumn(format="%.4f"),
     },
 )
+
+# ====================================================================
+# Recovery vs. external factors
+# ====================================================================
+#
+# Yesterday's weather predicting today's outcomes. The natural-question
+# framing: "did the hot night tank my HRV?" / "do I sleep worse on humid
+# nights?" Same lag structure as the main heatmap above (day D predictor
+# → day D+1 outcome) so the two grids compose intuitively.
+
+st.divider()
+st.subheader("Recovery vs. external factors")
+st.caption(
+    "Yesterday's weather as predictors of today's recovery signals. "
+    "Same lag + significance method as above. Empty until "
+    "`OPENWEATHER_API_KEY` is configured and the weather loader has run."
+)
+
+ctx = daily_context()
+
+if ctx.empty:
+    st.info(
+        "No weather data yet — set `OPENWEATHER_API_KEY` / "
+        "`OPENWEATHER_LAT` / `OPENWEATHER_LON` in `.env`, then run "
+        "`uv run python -m ingest.loaders.weather_openweather 30`."
+    )
+else:
+    # daily_signals has the recovery-side columns; daily_context has the
+    # external-factor predictors. Join on day, then build lagged columns.
+    full = daily_signals().merge(ctx, on="day", how="inner").sort_values("day")
+    full = full.reset_index(drop=True).copy()
+
+    # Predictors: shift weather columns back one day (yesterday's reading).
+    for col in (
+        "temp_min_c",
+        "temp_max_c",
+        "temp_night_c",
+        "humidity_afternoon",
+        "precip_total_mm",
+        "wind_max_mps",
+    ):
+        full[f"{col}_lag1"] = full[col].shift(1)
+
+    # Outcomes (today's values, no shift needed — predictor was lagged).
+    full["hrv_today"] = full["hrv_ms"]
+    full["rhr_today"] = full["rhr_bpm"]
+    full["recovery_today"] = full["recovery_score"]
+    full["sleep_today"] = full["sleep_minutes"]
+
+    # Same lookback window as the main heatmap
+    full = full[full["day"] >= full["day"].max() - pd.Timedelta(days=window_days - 1)].copy()
+
+    EXT_LEADING = {
+        "temp_night_c_lag1": "Yesterday night temp (°C)",
+        "temp_max_c_lag1": "Yesterday max temp (°C)",
+        "humidity_afternoon_lag1": "Yesterday humidity (%)",
+        "precip_total_mm_lag1": "Yesterday precip (mm)",
+        "wind_max_mps_lag1": "Yesterday wind (m/s)",
+    }
+    EXT_OUTCOMES = {
+        "hrv_today": "Today's HRV",
+        "rhr_today": "Today's RHR",
+        "sleep_today": "Today's sleep (min)",
+        "recovery_today": "Today's recovery",
+    }
+
+    ext_rows = []
+    for lead_col, lead_label in EXT_LEADING.items():
+        for out_col, out_label in EXT_OUTCOMES.items():
+            sub = full[[lead_col, out_col]].dropna()
+            n = len(sub)
+            if n < 5:
+                r = np.nan
+                p = np.nan
+            else:
+                r = float(sub[lead_col].corr(sub[out_col]))
+                p = _two_tailed_p(r, n)
+            ext_rows.append(
+                {
+                    "lead": lead_label,
+                    "outcome": out_label,
+                    "r": r,
+                    "n": n,
+                    "p": p,
+                    "label": (
+                        f"{r:+.2f}{'★' if (not pd.isna(p) and p < 0.05) else ''}"
+                        if not pd.isna(r)
+                        else "—"
+                    ),
+                }
+            )
+
+    if not ext_rows or all(pd.isna(row["r"]) for row in ext_rows):
+        st.info(
+            "Not enough overlap between weather and recovery data yet "
+            "(need ≥ 5 paired days). Re-check after the next weekly_load."
+        )
+    else:
+        ext_df = pd.DataFrame(ext_rows)
+        ext_df["lead"] = pd.Categorical(
+            ext_df["lead"], categories=list(EXT_LEADING.values()), ordered=True
+        )
+        ext_df["outcome"] = pd.Categorical(
+            ext_df["outcome"], categories=list(EXT_OUTCOMES.values()), ordered=True
+        )
+
+        ext_heat = (
+            alt.Chart(ext_df)
+            .mark_rect(stroke="white", strokeWidth=1)
+            .encode(
+                x=alt.X("outcome:N", title=None, sort=list(EXT_OUTCOMES.values())),
+                y=alt.Y("lead:N", title=None, sort=list(EXT_LEADING.values())),
+                color=alt.Color(
+                    "r:Q",
+                    scale=alt.Scale(scheme="redblue", domain=[-1, 1], reverse=True),
+                    legend=alt.Legend(title="Pearson r", orient="bottom"),
+                ),
+                tooltip=[
+                    alt.Tooltip("lead:N", title="Leading indicator"),
+                    alt.Tooltip("outcome:N", title="Outcome"),
+                    alt.Tooltip("r:Q", title="Pearson r", format="+.3f"),
+                    alt.Tooltip("n:Q", title="n (paired days)"),
+                    alt.Tooltip("p:Q", title="p (normal approx)", format=".4f"),
+                ],
+            )
+        )
+        ext_text = (
+            alt.Chart(ext_df)
+            .mark_text(fontSize=14, fontWeight="bold")
+            .encode(
+                x="outcome:N",
+                y="lead:N",
+                text="label:N",
+                color=alt.condition("abs(datum.r) > 0.5", alt.value("white"), alt.value("#1e293b")),
+            )
+        )
+        st.altair_chart(
+            (ext_heat + ext_text).properties(height=320),
+            use_container_width=True,
+        )
+
+        st.caption(
+            "Weather is sparse by nature — n drops fast for the rainier and "
+            "windier rows since most days are quiet. Treat absolute r values "
+            "below 0.2 as noise even when starred."
+        )
 
 # ---------------------------------------------------------------- caveats
 with st.expander("Method + caveats"):

@@ -194,3 +194,18 @@ def workout_hrr() -> pd.DataFrame:
         _engine(),
         parse_dates=["day_local", "workout_start_local", "workout_end_local"],
     )
+
+
+@st.cache_data(ttl=300)
+def daily_context() -> pd.DataFrame:
+    """Daily external-context mart (weather; future: calendar / Oura).
+
+    Returns empty DataFrame when OPENWEATHER_API_KEY isn't configured —
+    the mart still builds, just with zero rows. Page consumers should
+    handle empty-DF as "feature unavailable" rather than as an error.
+    """
+    return _daily_mart(
+        "SELECT day, temp_min_c, temp_max_c, temp_afternoon_c, temp_night_c, "
+        "humidity_afternoon, cloud_cover_afternoon, precip_total_mm, wind_max_mps "
+        "FROM analytics_marts.mart_daily_context ORDER BY day"
+    )
