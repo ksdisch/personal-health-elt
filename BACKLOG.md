@@ -17,12 +17,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** S
 - **Added:** 2026-05-11
 
-### [Improvement] Prefect: retries + failure alert on `run_dbt_build` task
-- **Why:** `ingest/flows/weekly_load.py` invokes `run_dbt_build()` once with no retry logic. A transient Postgres restart or a flaky dbt compile silently kills the run from the operator's perspective — there's no notification path.
-- **Acceptance:** `run_dbt_build` decorated with `@task(retries=2, retry_delay_seconds=60)`; on terminal failure the flow surfaces a non-zero exit AND emits a structured alert (Prefect log at ERROR with a tail of dbt stderr, or a Slack/email hook). Unit test simulates failure and confirms retry + final-failure logging.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Improvement] Per-metric observability in `weekly_load` flow
 - **Why:** `weekly_load.py` summarizes `files_loaded` + `rows_inserted` in aggregate. On a partial failure it's impossible to tell from logs which metric family (HR, sleep, workouts) is broken or which CSV is misbehaving.
 - **Acceptance:** Batch result includes per-loader and per-metric-type counts; flow logs a structured summary table (Prefect logger or JSON) at the end of each run; failing metric types are listed with sample paths and error type so an operator can immediately find the bad file.
@@ -170,6 +164,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Improvement] Prefect: retries + failure alert on `run_dbt_build` task
+- **Why:** `ingest/flows/weekly_load.py` invoked `run_dbt_build()` once with no retry logic. A transient Postgres restart or a flaky dbt compile silently killed the run from the operator's perspective — there was no notification path.
+- **Acceptance:** `run_dbt_build` decorated with `@task(retries=2, retry_delay_seconds=60)`; on terminal failure the flow surfaces a non-zero exit AND emits a structured alert (Prefect ERROR log with a tail of dbt stderr). Unit test simulates failure and confirms the raise + log behavior.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `feat/prefect-retries`. `run_dbt_build` now captures `proc.stdout/stderr`, logs the last 20 lines of stderr at ERROR on non-zero exit, and raises a new `DbtBuildError`. Prefect's `@task(retries=2, retry_delay_seconds=60)` retries twice before terminal failure; the exception propagates up so `weekly_load()` fails (Prefect run marked failed; CLI `python -m ingest.flows.weekly_load` exits non-zero). Also introduced a `_logger()` helper that falls back to a stdlib logger when called outside a Prefect runtime — lets `run_dbt_build.fn()` be invoked from unit tests without `MissingContextError`. 4 new tests in `tests/test_weekly_load.py` cover the happy path, raise-on-failure, stderr-tail logging (asserts last 20 lines appear and prior lines don't), and empty-stderr edge case. Local: pytest 57/57 (53 prior + 4 new), mypy clean, pre-commit hooks pass.
 
 ### [Improvement] Integration test for two-level idempotency contract
 - **Why:** Existing tests mocked the loaders at the unit level. No test ran a real CSV through a real Postgres twice and verified the contract end-to-end.
