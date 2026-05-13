@@ -22,3 +22,17 @@ DATABASE_URL = (
     f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
     f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 )
+
+
+def _maybe_float(s: str) -> float | None:
+    return float(s) if s else None
+
+
+# OpenWeather One Call 3.0 day_summary loader (optional).
+# All three must be set for the weather loader to do anything; if any are
+# missing the loader returns LoadResult(skipped=True) and weekly_load
+# continues. Lat/lon are a fixed home location — single-user pipeline,
+# no per-day GPS derivation.
+OPENWEATHER_API_KEY: str | None = os.getenv("OPENWEATHER_API_KEY") or None
+OPENWEATHER_LAT: float | None = _maybe_float(os.getenv("OPENWEATHER_LAT", ""))
+OPENWEATHER_LON: float | None = _maybe_float(os.getenv("OPENWEATHER_LON", ""))

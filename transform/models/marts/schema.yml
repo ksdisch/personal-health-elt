@@ -448,6 +448,36 @@ models:
           ±30s of the 120s target. Tolerance is looser here because
           post-workout samples thin out fast. NULL otherwise.
 
+  - name: mart_daily_context
+    description: >
+      External-context mart. One row per local day with weather columns
+      (and future calendar density / Oura / HomeKit columns). Joined to
+      mart_recovery_state on `day` for correlation analysis on page 09.
+      Distinct from mart_recovery_state so the public API of the latter
+      stays focused on internal health signals.
+    columns:
+      - name: day
+        description: Calendar date.
+        tests:
+          - not_null
+          - unique
+      - name: temp_min_c
+        description: Daily minimum temperature (Celsius). Nullable when OpenWeather omitted the reading.
+      - name: temp_max_c
+        description: Daily maximum temperature (Celsius).
+      - name: temp_afternoon_c
+        description: Mid-afternoon temperature (Celsius).
+      - name: temp_night_c
+        description: Overnight temperature (Celsius) — most relevant for sleep correlations.
+      - name: humidity_afternoon
+        description: Mid-afternoon relative humidity (%, 0-100).
+      - name: cloud_cover_afternoon
+        description: Mid-afternoon cloud cover (%, 0-100).
+      - name: precip_total_mm
+        description: Total daily precipitation (mm).
+      - name: wind_max_mps
+        description: Peak wind speed (m/s).
+
 exposures:
   - name: weekly_health_review
     label: weekly-health-review (Claude skill)
