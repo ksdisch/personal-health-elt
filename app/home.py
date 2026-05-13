@@ -1,4 +1,5 @@
 """Streamlit landing page for the personal health ELT pipeline."""
+
 import sys
 from pathlib import Path
 
@@ -26,7 +27,8 @@ c2.metric("Workouts", f"{len(wo):,}" if not wo.empty else "0")
 c3.metric(
     "Active range",
     f"{rec['day'].min().strftime('%b %-d')} → {rec['day'].max().strftime('%b %-d')}"
-    if not rec.empty else "—",
+    if not rec.empty
+    else "—",
 )
 latest_signal = rec.iloc[-1]["recovery_signal"] if not rec.empty else None
 c4.metric(

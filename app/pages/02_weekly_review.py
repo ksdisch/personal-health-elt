@@ -4,6 +4,7 @@ This page is the consumer's-eye view of what the weekly-health-review
 Claude skill will see: a recovery signal, the rolling ACWR and HRV
 trajectory, and the last two weeks of daily rows.
 """
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -61,10 +62,20 @@ if len(acwr_df) >= 2:
     day_max = acwr_df["day"].max()
     bands = pd.DataFrame(
         [
-            {"day_start": day_min, "day_end": day_max,
-             "y_low": 0.8, "y_high": 1.3, "tier": "sweet spot"},
-            {"day_start": day_min, "day_end": day_max,
-             "y_low": 1.5, "y_high": 3.0, "tier": "injury risk"},
+            {
+                "day_start": day_min,
+                "day_end": day_max,
+                "y_low": 0.8,
+                "y_high": 1.3,
+                "tier": "sweet spot",
+            },
+            {
+                "day_start": day_min,
+                "day_end": day_max,
+                "y_low": 1.5,
+                "y_high": 3.0,
+                "tier": "injury risk",
+            },
         ]
     )
     y_max = max(2.0, acwr_df["acwr"].max() * 1.1)
@@ -154,8 +165,13 @@ recent = recent.assign(
 display = (
     recent[
         [
-            "day", "signal", "rhr_bpm", "hrv_ms",
-            "zone_2_min_today", "zone_2_min_7d", "acwr",
+            "day",
+            "signal",
+            "rhr_bpm",
+            "hrv_ms",
+            "zone_2_min_today",
+            "zone_2_min_7d",
+            "acwr",
             "days_since_last_workout",
         ]
     ]

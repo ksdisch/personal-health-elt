@@ -1,4 +1,5 @@
 """Tests for ingest.file_inventory — pure Python, no DB required."""
+
 from pathlib import Path
 
 from ingest.file_inventory import FileEntry, hash_file, scan, unseen

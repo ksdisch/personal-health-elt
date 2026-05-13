@@ -1,4 +1,5 @@
 """Unit tests for parse_workouts_csv (pure function, no DB)."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -14,13 +15,13 @@ _HEADER = (
     "WORKOUTDOORS_HEALTHKIT_DISTANCE\n"
 )
 _ROW_RUN = (
-    "HKWorkoutTypeIdentifier,WorkOutDoors,5,\"Watch7,12\",somedev,"
+    'HKWorkoutTypeIdentifier,WorkOutDoors,5,"Watch7,12",somedev,'
     "2026-03-26 16:25:52 +0000,2026-03-26 17:20:07 +0000,"
     "Running,3255.45,sec,659.283 kcal,9688.1 m,,,"
     "8 m,4.82924 m/s,26 m,0,\n"
 )
 _ROW_INDOOR_YOGA = (
-    "HKWorkoutTypeIdentifier,Health,26.2,\"iPhone17,1\",,"
+    'HKWorkoutTypeIdentifier,Health,26.2,"iPhone17,1",,'
     "2026-03-20 13:00:00 +0000,2026-03-20 13:45:00 +0000,"
     "Yoga,2700,sec,,,,,,,,1,\n"
 )
@@ -54,10 +55,19 @@ def test_numeric_prefix_returns_none_for_garbage() -> None:
 def test_parse_renames_columns_to_snake_case(tmp_path: Path) -> None:
     df = parse_workouts_csv(_write_csv(tmp_path, [_ROW_RUN]))
     required = {
-        "activity_type", "source_name", "source_version", "product_type",
-        "start_ts", "end_ts", "duration_sec", "total_energy_kcal",
-        "total_distance_m", "elevation_asc_m", "elevation_desc_m",
-        "max_speed_mps", "indoor",
+        "activity_type",
+        "source_name",
+        "source_version",
+        "product_type",
+        "start_ts",
+        "end_ts",
+        "duration_sec",
+        "total_energy_kcal",
+        "total_distance_m",
+        "elevation_asc_m",
+        "elevation_desc_m",
+        "max_speed_mps",
+        "indoor",
     }
     assert required.issubset(set(df.columns))
 

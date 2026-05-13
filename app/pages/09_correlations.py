@@ -15,6 +15,7 @@ mart_daily_sleep is built.
 Significance test. We use the normal approximation: |r| > 1.96/sqrt(n).
 Good enough for n ≥ 30 (our regime); avoids a scipy dependency.
 """
+
 from __future__ import annotations
 
 from math import erfc, sqrt
@@ -162,9 +163,7 @@ text = (
         x="outcome:N",
         y="lead:N",
         text="label:N",
-        color=alt.condition(
-            "abs(datum.r) > 0.5", alt.value("white"), alt.value("#1e293b")
-        ),
+        color=alt.condition("abs(datum.r) > 0.5", alt.value("white"), alt.value("#1e293b")),
     )
 )
 st.altair_chart((heat + text).properties(height=300), use_container_width=True)

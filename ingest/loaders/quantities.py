@@ -12,6 +12,7 @@ levels:
 Both happen in a single transaction — rollback on any insert failure
 leaves raw.file_inventory untouched so the next run retries cleanly.
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,9 +69,7 @@ def parse_quantities_csv(path: Path) -> pd.DataFrame:
 
     missing = _EXPECTED_COLUMNS - set(df.columns)
     if missing:
-        raise ValueError(
-            f"{path.name}: missing expected columns after rename: {sorted(missing)}"
-        )
+        raise ValueError(f"{path.name}: missing expected columns after rename: {sorted(missing)}")
 
     df["start_ts"] = pd.to_datetime(df["start_ts"], utc=True)
     df["end_ts"] = pd.to_datetime(df["end_ts"], utc=True)
@@ -85,9 +84,7 @@ def load_quantities_csv(path: Path, engine: Engine | None = None) -> LoadResult:
     with engine.connect() as conn:
         if _already_loaded(conn, sha):
             logger.info("skip %s (sha=%s already loaded)", path.name, sha[:8])
-            return LoadResult(
-                path=path, sha256=sha, rows_read=0, rows_inserted=0, skipped=True
-            )
+            return LoadResult(path=path, sha256=sha, rows_read=0, rows_inserted=0, skipped=True)
 
     df = parse_quantities_csv(path)
     df = df.assign(source_file=path.name, source_sha256=sha)
@@ -98,7 +95,10 @@ def load_quantities_csv(path: Path, engine: Engine | None = None) -> LoadResult:
 
     logger.info(
         "loaded %s — read %d, inserted %d (sha=%s)",
-        path.name, len(df), inserted, sha[:8],
+        path.name,
+        len(df),
+        inserted,
+        sha[:8],
     )
     return LoadResult(
         path=path,

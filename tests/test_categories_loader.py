@@ -1,4 +1,5 @@
 """Unit tests for parse_categories_csv (pure function, no DB)."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -7,8 +8,7 @@ import pytest
 from ingest.loaders.categories import parse_categories_csv
 
 _SLEEP_HEADER = (
-    "type,sourceName,sourceVersion,productType,device,"
-    "startDate,endDate,value,HKTimeZone\n"
+    "type,sourceName,sourceVersion,productType,device,startDate,endDate,value,HKTimeZone\n"
 )
 _SLEEP_ROW = (
     "HKCategoryTypeIdentifierSleepAnalysis,"
@@ -17,10 +17,7 @@ _SLEEP_ROW = (
     "asleepCore,America/Phoenix\n"
 )
 
-_MINDFUL_HEADER = (
-    "type,sourceName,sourceVersion,productType,device,"
-    "startDate,endDate,value\n"
-)
+_MINDFUL_HEADER = "type,sourceName,sourceVersion,productType,device,startDate,endDate,value\n"
 _MINDFUL_ROW = (
     "HKCategoryTypeIdentifierMindfulSession,"
     "Waking Up,878,iPhone18,,"
@@ -39,10 +36,7 @@ _HRE_ROW = (
     "notApplicable,120 count/min\n"
 )
 
-_STAND_HEADER = (
-    "type,sourceName,sourceVersion,productType,device,"
-    "startDate,endDate,value\n"
-)
+_STAND_HEADER = "type,sourceName,sourceVersion,productType,device,startDate,endDate,value\n"
 _STAND_ROW = (
     "HKCategoryTypeIdentifierAppleStandHour,"
     "Kyle's Apple Watch,26.2,Watch7,,"

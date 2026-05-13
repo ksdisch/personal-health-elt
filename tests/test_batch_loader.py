@@ -1,4 +1,5 @@
 """Unit tests for the batch loader — DB-free via loader injection."""
+
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ def _fake_ok_loader(calls: list[Path]):
     def _load(path: Path, engine=None) -> LoadResult:
         calls.append(path)
         return LoadResult(path=path, sha256="abc", rows_read=10, rows_inserted=10, skipped=False)
+
     return _load
 
 
@@ -95,7 +97,8 @@ def test_batch_result_counts(tmp_path: Path) -> None:
         # First one is "already loaded", second is new.
         skipped = "A_x" in path.name
         return LoadResult(
-            path=path, sha256="y",
+            path=path,
+            sha256="y",
             rows_read=0 if skipped else 5,
             rows_inserted=0 if skipped else 5,
             skipped=skipped,

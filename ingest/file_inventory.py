@@ -8,6 +8,7 @@ This module is pure Python — no database dependency. Persistence lives
 elsewhere (raw.file_inventory table), and callers pass the set of known
 hashes in. Keeping it pure makes it trivially unit-testable.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,10 +43,7 @@ def scan(drop_dir: Path) -> list[FileEntry]:
     """
     if not drop_dir.is_dir():
         return []
-    return [
-        FileEntry(path=p, sha256=hash_file(p))
-        for p in sorted(drop_dir.glob("*.csv"))
-    ]
+    return [FileEntry(path=p, sha256=hash_file(p)) for p in sorted(drop_dir.glob("*.csv"))]
 
 
 def unseen(entries: list[FileEntry], seen_hashes: set[str]) -> list[FileEntry]:

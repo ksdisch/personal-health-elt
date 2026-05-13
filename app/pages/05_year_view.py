@@ -8,6 +8,7 @@ Sources: mart_training_load (training_load) + mart_recovery_state
 (recovery_signal). A pandas date spine fills rest days as zero-strain
 or insufficient-data cells so the grid has no gaps.
 """
+
 from __future__ import annotations
 
 import altair as alt
@@ -45,16 +46,20 @@ with c2:
 # Anchor the spine to the union of both marts' day ranges so rest days
 # render as zero-strain cells instead of leaving holes in the grid.
 day_candidates_min = [
-    d for d in [
+    d
+    for d in [
         load_df["day"].min() if not load_df.empty else None,
         rec_df["day"].min() if not rec_df.empty else None,
-    ] if d is not None
+    ]
+    if d is not None
 ]
 day_candidates_max = [
-    d for d in [
+    d
+    for d in [
         load_df["day"].max() if not load_df.empty else None,
         rec_df["day"].max() if not rec_df.empty else None,
-    ] if d is not None
+    ]
+    if d is not None
 ]
 day_min = min(day_candidates_min)
 day_max = max(day_candidates_max)
@@ -65,10 +70,8 @@ if window != "All time":
 
 spine = pd.DataFrame({"day": pd.date_range(day_min, day_max, freq="D")})
 
-df = (
-    spine
-    .merge(load_df[["day", "training_load"]], on="day", how="left")
-    .merge(rec_df[["day", "recovery_signal"]], on="day", how="left")
+df = spine.merge(load_df[["day", "training_load"]], on="day", how="left").merge(
+    rec_df[["day", "recovery_signal"]], on="day", how="left"
 )
 df["training_load"] = df["training_load"].fillna(0)
 df["recovery_signal"] = df["recovery_signal"].fillna("insufficient_data")
