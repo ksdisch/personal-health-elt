@@ -41,12 +41,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** M
 - **Added:** 2026-05-11
 
-### [Refactor] Extract shared idempotency helpers across loaders
-- **Why:** Three loaders (`quantities.py`, `workouts.py`, `categories.py`) now contain near-identical `_already_loaded()`, `_record_file()`, `_upsert_rows()`, and `_records_with_none_for_nan()` functions. The categories loader landed with the helpers duplicated by deliberate scope choice (consolidation deferred to keep the loader PR small). Adding a fourth source (e.g., weather, calendar, Oura) would mean a fourth copy.
-- **Acceptance:** Helpers extracted to `ingest/loaders/_idempotency.py` (or a `BaseLoader` class); all three loaders import the shared versions; behavior unchanged (existing pytest + real-export idempotency check on categories still pass); unit test added for the extracted module.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Refactor] Extract rolling-window pattern into a dbt macro
 - **Why:** `mart_training_load.sql` and `mart_daily_anomaly_bands.sql` compute trailing N-day windows with identical `rows between N preceding and 1 preceding` syntax. Adding a third consumer (e.g. Zone 2 trailing minutes on the readiness page) will mean a third copy-paste.
 - **Acceptance:** New macro `transform/macros/rolling_trailing.sql` accepts `(column, window_days, partition_by)`. Both existing marts refactored to use it; `dbt build` produces row-for-row identical output (verify via a checksum diff before/after).
@@ -164,6 +158,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Refactor] Extract shared idempotency helpers across loaders
+- **Why:** Three loaders (`quantities.py`, `workouts.py`, `categories.py`) carried near-identical `_already_loaded`, `_record_file`, `_upsert_rows`, and `_records_with_none_for_nan` private functions. Adding a fourth source (weather, calendar, Oura) would have meant a fourth copy.
+- **Acceptance:** Helpers extracted to `ingest/loaders/_idempotency.py`; all three loaders import the shared versions; behavior unchanged (integration tests still pass); unit test added for the extracted module.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `refactor/idempotency-helpers`. New module `ingest/loaders/_idempotency.py` exposes `already_loaded`, `record_file`, `upsert_rows(table=..., index_elements=...)`, and `records_with_none_for_nan`. The three loaders dropped ~60 lines each of duplicated private functions and replaced them with imports + parameterized calls (each loader's natural-key tuple becomes a kwarg to `upsert_rows` rather than hardcoded inside its own copy). New `tests/test_idempotency_helpers.py` covers the pure `records_with_none_for_nan` function (math.nan, pd.NA, zero/empty-string preservation, empty DataFrame). The DB-bound helpers stay covered end-to-end by `tests/test_idempotency_integration.py` against real Postgres. Local: pytest 61/61 (57 prior + 4 new), mypy clean (11 source files), pre-commit hooks pass.
 
 ### [Improvement] Prefect: retries + failure alert on `run_dbt_build` task
 - **Why:** `ingest/flows/weekly_load.py` invoked `run_dbt_build()` once with no retry logic. A transient Postgres restart or a flaky dbt compile silently killed the run from the operator's perspective — there was no notification path.
