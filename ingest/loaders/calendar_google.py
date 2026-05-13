@@ -50,7 +50,12 @@ logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo("America/Chicago")
 
 _HTTP_TIMEOUT_SEC = 30
-_MAX_RRULE_HORIZON_DAYS = 365  # cap expansion of unbounded recurring events
+
+# Safety cap on RRULE iteration. Defends against pathological rules
+# (e.g., FREQ=SECONDLY) without UNTIL/COUNT that would otherwise spin
+# forever within a long window. A typical weekly cadence over a year
+# is ~52 instances; 5,000 is a 100x margin that still terminates fast.
+_MAX_RRULE_INSTANCES = 5000
 
 FetchFn = Callable[[str], bytes]
 
@@ -116,10 +121,6 @@ def _expand_event(
 
     window_start_dt = datetime.combine(window_start, time.min, tzinfo=LOCAL_TZ)
     window_end_dt = datetime.combine(window_end + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
-    horizon = min(
-        window_end_dt,
-        datetime.now(tz=LOCAL_TZ) + timedelta(days=_MAX_RRULE_HORIZON_DAYS),
-    )
 
     rrule_prop = component.get("rrule")
     if rrule_prop is None:
@@ -153,13 +154,24 @@ def _expand_event(
             for ex in exdate_list.dts:
                 excluded_set.add(_ensure_aware(ex.dt))
 
+    # Iterate occurrences in order (dateutil.rrule guarantees this for
+    # rules without BYSETPOS). Stop at window_end_dt; rely on the
+    # instance-count cap as a safety net for runaway rules.
     instances: list[tuple[datetime, datetime, bool]] = []
-    for occ in rule:
+    for i, occ in enumerate(rule):
+        if i >= _MAX_RRULE_INSTANCES:
+            logger.warning(
+                "calendar: hit RRULE expansion safety cap (%d instances) for event "
+                "starting %s; truncating",
+                _MAX_RRULE_INSTANCES,
+                dtstart_aware,
+            )
+            break
         if not isinstance(occ, datetime):
             continue
         if occ.tzinfo is None:
             occ = occ.replace(tzinfo=UTC)
-        if occ >= horizon:
+        if occ >= window_end_dt:
             break
         if occ < window_start_dt:
             continue
