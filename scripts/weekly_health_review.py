@@ -22,9 +22,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd  # noqa: E402
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
-from ingest.config import DATABASE_URL  # noqa: E402
+from ingest.db import get_engine  # noqa: E402
 
 _SIGNAL_EMOJI = {
     "well_recovered": "🟢",
@@ -55,8 +55,7 @@ def _fetch(days: int) -> pd.DataFrame:
         ORDER BY day
         """
     )
-    engine = create_engine(DATABASE_URL)
-    return pd.read_sql(sql, engine, params={"days": days}, parse_dates=["day"])
+    return pd.read_sql(sql, get_engine(), params={"days": days}, parse_dates=["day"])
 
 
 def _iso_week_label(d: date) -> str:

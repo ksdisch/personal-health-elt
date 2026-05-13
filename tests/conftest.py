@@ -13,11 +13,11 @@ import os
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
-from ingest.config import DATABASE_URL
+from ingest.db import get_engine
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_SCHEMA_SQL = PROJECT_ROOT / "scripts" / "init_raw_schema.sql"
@@ -31,12 +31,12 @@ def pg_engine() -> Engine:
     schema and the three source tables exist before any integration
     test touches them. The script is idempotent (`IF NOT EXISTS`).
     """
-    engine = create_engine(DATABASE_URL)
+    engine = get_engine()
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
     except OperationalError as exc:
-        pytest.skip(f"Postgres unreachable at {DATABASE_URL}: {exc}")
+        pytest.skip(f"Postgres unreachable: {exc}")
 
     with engine.begin() as conn:
         conn.execute(text(RAW_SCHEMA_SQL.read_text()))

@@ -20,10 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from ingest.config import DATABASE_URL
+from ingest.db import get_engine
 from ingest.file_inventory import hash_file
 from ingest.loaders._idempotency import already_loaded, record_file, upsert_rows
 
@@ -78,7 +77,7 @@ def parse_quantities_csv(path: Path) -> pd.DataFrame:
 
 def load_quantities_csv(path: Path, engine: Engine | None = None) -> LoadResult:
     """Load one quantity CSV into raw.quantities."""
-    engine = engine or create_engine(DATABASE_URL)
+    engine = engine or get_engine()
     sha = hash_file(path)
 
     with engine.connect() as conn:
