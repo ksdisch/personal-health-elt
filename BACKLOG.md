@@ -11,12 +11,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 
 ## Open
 
-### [Improvement] Extend smoke test to cover pages 01–04
-- **Why:** `tests/test_smoke.py:18-24` parametrizes only pages 05–09. The four oldest, most-trafficked pages (01_daily, 02_weekly_review, 03_training_load, 04_body_comp) have no compile-time guard. They don't have the leading-digit gotcha, so `compile()` works the same on them.
-- **Acceptance:** `NEW_PAGES` list expanded to all nine numbered pages under `app/pages/`; smoke test parametrizes over all of them; CI remains green.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Improvement] Extend mypy coverage to `app/`
 - **Why:** The CI-hardening ship (2026-05-12) enabled mypy on `ingest/` but skipped `app/`. Reason: `app/pages/07_readiness.py:157` alone produces ~30 errors from a single `mark_text(**dict[str, object])` Altair kwarg spread, plus another ~30 at line 162. The signal-to-noise ratio for typing Streamlit + Altair page code is low — most errors are inherent to Altair's loosely-typed kwargs API, not real bugs. Worth revisiting once the page code stabilizes or Altair publishes better stubs.
 - **Acceptance:** `uv run mypy app` passes cleanly. Likely requires: typing the Altair kwarg dicts at call sites (or using `cast(Any, ...)`), fixing the `Returning Any from function declared to return "Chart"` issues in `06_anomaly.py`, narrowing the `dict.get` arg type in `home.py`. CI's `Mypy (ingest)` step extended to `Mypy (ingest + app)`.
@@ -140,6 +134,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Improvement] Extend smoke test to cover pages 01–04
+- **Why:** `tests/test_smoke.py` parametrized only pages 05–09 (and 12 after the sleep ship). The four oldest, most-trafficked pages (01_daily, 02_weekly_review, 03_training_load, 04_body_comp) had no compile-time guard.
+- **Acceptance:** Smoke test parametrizes over all numbered pages under `app/pages/`; CI remains green.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `test/smoke-test-all-pages`. Replaced the hardcoded `NEW_PAGES` list with a glob-based `_numbered_pages()` discovery (`app/pages/<digit>*.py`) so any future numbered page is auto-covered. Renamed the constant `NEW_PAGES` → `PAGES` (the "new" framing was obsolete — all pages now). Added a `test_pages_directory_is_not_empty` guard so the parametrized test can't silently no-op if the glob misses. All 10 existing pages now exercised (01–09 + 12_sleep). Local: pytest 77/77 (72 prior + 5 new — the empty-dir guard + 4 newly-covered pages 01–04). The compile-only approach still validates syntax without touching Postgres, so CI's empty-schema invariant is unchanged.
 
 ### [Feature] Declare `exposure: weekly-health-review` for `mart_recovery_state`
 - **Why:** The mart was contractually consumed by the external `weekly-health-review` Claude skill, but no `exposures:` block existed. `dbt docs` and `dbt ls --select +exposure:` couldn't see the dependency, and contract drift couldn't be audited at the dbt layer.
