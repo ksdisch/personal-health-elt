@@ -182,16 +182,35 @@ def test_load_calendar_daily_skips_unchanged_ics(pg_engine: Engine) -> None:
                 )
 
 
+# An extra timed event inserted INSIDE the VCALENDAR block — produces
+# a body with a different SHA than _SAMPLE_ICS while staying a
+# well-formed iCal calendar (so the parser doesn't reject it).
+_EXTRA_VEVENT_BLOCK = b"""BEGIN:VEVENT
+UID:extra-1@test
+DTSTART:20990405T120000Z
+DTEND:20990405T130000Z
+SUMMARY:Extra meeting
+END:VEVENT
+"""
+_SAMPLE_ICS_V2 = _SAMPLE_ICS.replace(b"END:VCALENDAR", _EXTRA_VEVENT_BLOCK + b"END:VCALENDAR")
+
+
 def test_load_calendar_daily_different_body_inserts_fresh_rows(pg_engine: Engine) -> None:
-    """A changed ICS produces a new SHA and a fresh row-set per day."""
+    """A changed ICS produces a new SHA and a fresh row-set per day.
+
+    Both bodies must be valid iCal calendars — appending bytes after
+    END:VCALENDAR makes the body unparseable, which the parser now
+    correctly treats as malformed and returns empty for. The test's
+    second body adds an extra VEVENT instead, so it's a real
+    calendar mutation rather than a parse-failure path.
+    """
     engine = pg_engine
 
-    fetched: list[bytes] = []
+    call_count = {"n": 0}
 
-    def _evolving_fetch(_url: str) -> bytes:
-        body = _SAMPLE_ICS if not fetched else _SAMPLE_ICS + b"X-Pad: 1\n"
-        fetched.append(body)
-        return body
+    def _fetch_seq(_url: str) -> bytes:
+        call_count["n"] += 1
+        return _SAMPLE_ICS if call_count["n"] == 1 else _SAMPLE_ICS_V2
 
     shas_seen: list[str] = []
     try:
@@ -200,7 +219,7 @@ def test_load_calendar_daily_different_body_inserts_fresh_rows(pg_engine: Engine
             today=date(2099, 4, 10),
             url="https://fake/basic.ics",
             engine=engine,
-            fetch_fn=_evolving_fetch,
+            fetch_fn=_fetch_seq,
         )
         assert first.rows_inserted > 0
         assert first.sha256 is not None
@@ -211,7 +230,7 @@ def test_load_calendar_daily_different_body_inserts_fresh_rows(pg_engine: Engine
             today=date(2099, 4, 10),
             url="https://fake/basic.ics",
             engine=engine,
-            fetch_fn=_evolving_fetch,
+            fetch_fn=_fetch_seq,
         )
         # Different body → different SHA → loader inserts a NEW set of rows.
         assert second.sha256 != first.sha256
