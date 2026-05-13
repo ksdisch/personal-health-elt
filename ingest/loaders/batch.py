@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 
 LoaderKind = str  # "quantities" | "categories" | "workouts" | (None when unknown)
 
+_HK_PREFIXES = (
+    "HKQuantityTypeIdentifier",
+    "HKCategoryTypeIdentifier",
+    "HKWorkoutActivityType",
+)
+
 
 def dispatch(path: Path) -> LoaderKind | None:
     """Return the loader kind for a file, or None if we don't handle it yet."""
@@ -41,6 +47,21 @@ def dispatch(path: Path) -> LoaderKind | None:
     if "HKCategoryTypeIdentifier" in name:
         return "categories"
     return None
+
+
+def metric_type_from_path(path: Path) -> str:
+    """Strip the HK prefix from a filename's stem to get the metric name.
+
+    `HKQuantityTypeIdentifierRestingHeartRate.csv` → `RestingHeartRate`.
+    Returns `"unknown"` when no known prefix matches. Used to label
+    per-metric-type lines in the batch summary so an operator can
+    immediately spot which family was affected.
+    """
+    stem = path.stem
+    for prefix in _HK_PREFIXES:
+        if stem.startswith(prefix):
+            return stem.removeprefix(prefix)
+    return "unknown"
 
 
 @dataclass
@@ -61,6 +82,97 @@ class BatchResult:
     @property
     def total_rows_inserted(self) -> int:
         return sum(r.rows_inserted for r in self.loaded)
+
+    def per_kind_summary(self) -> dict[str, dict[str, int]]:
+        """Aggregate counts per loader kind (quantities / categories / workouts).
+
+        Each value dict has `files_loaded`, `files_already_loaded`,
+        `rows_inserted`, and `files_errored`. Kinds with zero activity
+        are omitted so the summary stays tight.
+        """
+        out: dict[str, dict[str, int]] = {}
+        for r in self.loaded:
+            kind = dispatch(r.path) or "unknown"
+            d = out.setdefault(
+                kind,
+                {
+                    "files_loaded": 0,
+                    "files_already_loaded": 0,
+                    "rows_inserted": 0,
+                    "files_errored": 0,
+                },
+            )
+            if r.skipped:
+                d["files_already_loaded"] += 1
+            else:
+                d["files_loaded"] += 1
+            d["rows_inserted"] += r.rows_inserted
+        for path, _exc in self.errors:
+            kind = dispatch(path) or "unknown"
+            d = out.setdefault(
+                kind,
+                {
+                    "files_loaded": 0,
+                    "files_already_loaded": 0,
+                    "rows_inserted": 0,
+                    "files_errored": 0,
+                },
+            )
+            d["files_errored"] += 1
+        return out
+
+    def per_metric_type_summary(self) -> list[dict[str, object]]:
+        """One row per successfully-processed file (loaded or already-seen),
+        labelled with its metric_type. Sorted by filename for stable logs.
+        """
+        return [
+            {
+                "metric_type": metric_type_from_path(r.path),
+                "kind": dispatch(r.path) or "unknown",
+                "rows_read": r.rows_read,
+                "rows_inserted": r.rows_inserted,
+                "skipped": r.skipped,
+            }
+            for r in sorted(self.loaded, key=lambda r: r.path.name)
+        ]
+
+    def errored_metric_types(self) -> list[dict[str, str]]:
+        """One row per error — metric_type, path, error type, truncated message.
+
+        Operators use this list to jump straight to the bad file on a
+        partial failure. Error messages are truncated to 200 chars so a
+        runaway stack trace can't drown the structured log.
+        """
+        return [
+            {
+                "metric_type": metric_type_from_path(path),
+                "kind": dispatch(path) or "unknown",
+                "path": str(path),
+                "error_type": type(exc).__name__,
+                "error_msg": str(exc)[:200],
+            }
+            for path, exc in self.errors
+        ]
+
+    def format_summary_table(self) -> str:
+        """Multi-line human-readable summary suitable for one log message."""
+        per_kind = self.per_kind_summary()
+        if not per_kind:
+            return "batch summary: no files processed"
+
+        header = f"{'kind':<12}  {'loaded':>6}  {'already':>7}  {'rows':>10}  {'errored':>7}"
+        rows = [header, "-" * len(header)]
+        for kind in ("quantities", "categories", "workouts", "unknown"):
+            if kind not in per_kind:
+                continue
+            d = per_kind[kind]
+            rows.append(
+                f"{kind:<12}  {d['files_loaded']:>6}  "
+                f"{d['files_already_loaded']:>7}  "
+                f"{d['rows_inserted']:>10}  "
+                f"{d['files_errored']:>7}"
+            )
+        return "\n".join(rows)
 
 
 def load_folder(
@@ -120,11 +232,16 @@ def _main() -> None:
     print(f"files skipped:      {len(result.skipped)}")
     print(f"files errored:      {len(result.errors)}")
     print(f"new rows inserted:  {result.total_rows_inserted}")
+    print()
+    print(result.format_summary_table())
 
     if result.errors:
         print("\nErrors:")
-        for path, exc in result.errors:
-            print(f"  {path.name}: {type(exc).__name__}: {exc}")
+        for entry in result.errored_metric_types():
+            print(
+                f"  [{entry['kind']}] {entry['metric_type']}: "
+                f"{entry['error_type']}: {entry['error_msg']}"
+            )
 
 
 if __name__ == "__main__":

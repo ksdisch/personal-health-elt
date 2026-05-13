@@ -17,12 +17,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** S
 - **Added:** 2026-05-11
 
-### [Improvement] Per-metric observability in `weekly_load` flow
-- **Why:** `weekly_load.py` summarizes `files_loaded` + `rows_inserted` in aggregate. On a partial failure it's impossible to tell from logs which metric family (HR, sleep, workouts) is broken or which CSV is misbehaving.
-- **Acceptance:** Batch result includes per-loader and per-metric-type counts; flow logs a structured summary table (Prefect logger or JSON) at the end of each run; failing metric types are listed with sample paths and error type so an operator can immediately find the bad file.
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Improvement] Extend smoke test to cover pages 01–04
 - **Why:** `tests/test_smoke.py:18-24` parametrizes only pages 05–09. The four oldest, most-trafficked pages (01_daily, 02_weekly_review, 03_training_load, 04_body_comp) have no compile-time guard. They don't have the leading-digit gotcha, so `compile()` works the same on them.
 - **Acceptance:** `NEW_PAGES` list expanded to all nine numbered pages under `app/pages/`; smoke test parametrizes over all of them; CI remains green.
@@ -158,6 +152,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Improvement] Per-metric observability in `weekly_load` flow
+- **Why:** `weekly_load.py` summarized `files_loaded` + `rows_inserted` in aggregate. On a partial failure it was impossible to tell from logs which metric family (HR, sleep, workouts) was broken or which CSV was misbehaving.
+- **Acceptance:** Batch result includes per-loader and per-metric-type counts; flow logs a structured summary table at the end of each run; failing metric types are listed with sample paths and error type.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `feat/per-metric-observability`. `BatchResult` gained four observability methods: `per_kind_summary()` (per-loader counts including `files_errored`), `per_metric_type_summary()` (one row per processed file with the HK prefix stripped — `RestingHeartRate` not `HKQuantityTypeIdentifierRestingHeartRate`), `errored_metric_types()` (one row per failure with metric_type, kind, path, error_type, and a 200-char truncated message — runaway stack traces can't drown the log), and `format_summary_table()` (human-readable text table for one-message logging). New module-level helper `metric_type_from_path(path)` does the prefix stripping. The `weekly_load` flow now emits two extra log lines: an INFO line with the formatted summary table + JSON for parseable downstream consumers, and an ERROR line listing errored metric types when `result.errors` is non-empty. CLI `_main()` also prints the new table. 11 new unit tests cover prefix stripping (3 prefixes + unknown fallback), per-kind summary (loaded / already-loaded / errors), errored_metric_types (basic + truncation), per_metric_type sort order, and the formatted-table empty + populated cases. Local: pytest 72/72 (61 prior + 11 new), mypy clean, pre-commit hooks pass.
 
 ### [Improvement] README live-app link + `docs/DEPLOYMENT.md`
 - **Why:** The README was portfolio-grade but had no "see it live" link and no deployment instructions. Hiring managers couldn't poke at the Streamlit app, and a fork couldn't reproduce the deployment story.

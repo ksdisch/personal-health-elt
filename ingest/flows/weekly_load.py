@@ -19,6 +19,7 @@ ON CONFLICT DO NOTHING handles row-level overlaps.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -119,8 +120,23 @@ def weekly_load() -> dict[str, int | None]:
         "rows_inserted": result.total_rows_inserted,
     }
 
+    # Per-kind breakdown is always logged so a flaky family (e.g. only
+    # workouts failed) is obvious at a glance. JSON-formatted because
+    # the structured Prefect UI parses it nicely.
+    log.info("per-kind breakdown:\n%s", result.format_summary_table())
+    log.info(
+        "per-kind breakdown (json): %s",
+        json.dumps(result.per_kind_summary(), default=str),
+    )
+
     if result.errors:
-        log.warning("%d files errored — skipping dbt build", len(result.errors))
+        # Structured ERROR log so on-call (or future Slack/email hook)
+        # gets the exact paths + error types without grepping stderr.
+        log.error(
+            "%d files errored — skipping dbt build. errored metric types: %s",
+            len(result.errors),
+            json.dumps(result.errored_metric_types(), default=str),
+        )
         summary["dbt_exit_code"] = None
     elif result.total_rows_inserted == 0:
         log.info("No new rows; skipping dbt build")
@@ -128,7 +144,7 @@ def weekly_load() -> dict[str, int | None]:
     else:
         summary["dbt_exit_code"] = run_dbt_build()
 
-    log.info("weekly_load summary: %s", summary)
+    log.info("weekly_load summary: %s", json.dumps(summary, default=str))
     return summary
 
 
