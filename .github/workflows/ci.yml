@@ -9,6 +9,29 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: health
+          POSTGRES_PASSWORD: health
+          POSTGRES_DB: health
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U health -d health"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: health
+      POSTGRES_DB: health
+      PGPASSWORD: health  # for psql in the raw-schema init step
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,17 +49,25 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
-      - name: Pytest
-        run: uv run pytest
+      - name: Mypy (ingest)
+        # app/ is intentionally skipped — see BACKLOG: "Extend mypy to app/"
+        run: uv run mypy ingest
+
+      - name: Pytest with coverage
+        run: uv run pytest --cov=ingest --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Initialize raw schema
+        run: psql -h localhost -U health -d health -f scripts/init_raw_schema.sql
 
       - name: Prepare dbt profile
         run: cp transform/profiles.yml.example transform/profiles.yml
 
       - name: dbt parse
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: "5432"
-          POSTGRES_USER: health
-          POSTGRES_PASSWORD: health
-          POSTGRES_DB: health
         run: uv run dbt parse --project-dir transform --profiles-dir transform
+
+      - name: dbt build
+        # Runs against empty raw.* tables (just-initialized schema). All models
+        # and tests must compile + execute; not_null/unique/accepted_values tests
+        # pass trivially on empty inputs. Catches SQL mismatches that `dbt parse`
+        # alone misses (column drift, bad joins, type errors).
+        run: uv run dbt build --project-dir transform --profiles-dir transform

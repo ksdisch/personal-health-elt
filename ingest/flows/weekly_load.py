@@ -22,6 +22,7 @@ import subprocess
 from pathlib import Path
 
 from prefect import flow, get_run_logger, task
+from prefect.schedules import Cron
 
 from ingest.config import RAW_DATA_PATH
 from ingest.loaders.batch import BatchResult, load_folder
@@ -54,12 +55,12 @@ def run_dbt_build() -> int:
 
 
 @flow(name="weekly-health-load")
-def weekly_load() -> dict:
+def weekly_load() -> dict[str, int | None]:
     """End-to-end weekly refresh: load CSVs → dbt build → return summary."""
     log = get_run_logger()
     result = load_drop_folder(RAW_DATA_PATH)
 
-    summary = {
+    summary: dict[str, int | None] = {
         "files_loaded":       result.files_loaded,
         "files_already_seen": result.files_already_loaded,
         "files_skipped":      len(result.skipped),
@@ -91,8 +92,7 @@ def _serve() -> None:
     """
     weekly_load.serve(
         name="weekly-health-load",
-        cron="0 11 * * 0",
-        timezone="America/Chicago",
+        schedules=[Cron("0 11 * * 0", timezone="America/Chicago")],
         description="Load new HK CSVs from data/raw and run dbt build.",
         tags=["health", "weekly"],
     )

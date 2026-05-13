@@ -180,7 +180,7 @@ def _upsert_rows(conn: Connection, df: pd.DataFrame) -> int:
     before = conn.execute(count_sql).scalar_one()
     conn.execute(stmt, records)
     after = conn.execute(count_sql).scalar_one()
-    return after - before
+    return int(after - before)
 
 
 def _records_with_none_for_nan(df: pd.DataFrame) -> list[dict]:
