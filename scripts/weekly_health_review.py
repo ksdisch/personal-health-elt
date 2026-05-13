@@ -9,6 +9,7 @@ Designed to be invoked from the skill, but also runnable standalone:
 
     uv run python scripts/weekly_health_review.py [--days N]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -98,8 +99,7 @@ def render_briefing(df: pd.DataFrame, *, today: date | None = None) -> str:
 
     if df.empty:
         return (
-            f"## {label} (Week of {monday})\n\n"
-            "_No recovery data available for the last 14 days._\n"
+            f"## {label} (Week of {monday})\n\n_No recovery data available for the last 14 days._\n"
         )
 
     last7 = df.tail(7)
@@ -113,28 +113,22 @@ def render_briefing(df: pd.DataFrame, *, today: date | None = None) -> str:
     z2_alert = " ⚠️" if z2_pct is not None and z2_pct < 60 else ""
     acwr = latest["acwr"]
     strength_7d = (
-        int(latest["strength_sessions_7d"])
-        if pd.notna(latest["strength_sessions_7d"]) else 0
+        int(latest["strength_sessions_7d"]) if pd.notna(latest["strength_sessions_7d"]) else 0
     )
 
     signal_counts = Counter(last7["recovery_signal"].dropna())
 
     rhr_trend = (
         _trend_arrow(avg_rhr, prior7["rhr_bpm"].mean(), lower_is_better=True)
-        if not prior7.empty else ""
+        if not prior7.empty
+        else ""
     )
-    hrv_trend = (
-        _trend_arrow(avg_hrv, prior7["hrv_ms"].mean())
-        if not prior7.empty else ""
-    )
+    hrv_trend = _trend_arrow(avg_hrv, prior7["hrv_ms"].mean()) if not prior7.empty else ""
 
-    headline_signal = (
-        signal_counts.most_common(1)[0][0] if signal_counts else "insufficient_data"
-    )
+    headline_signal = signal_counts.most_common(1)[0][0] if signal_counts else "insufficient_data"
     headline = f"{_SIGNAL_EMOJI[headline_signal]} {_SIGNAL_LABEL[headline_signal].title()}"
     sig_summary = " · ".join(
-        f"{_SIGNAL_EMOJI[k]} {v}"
-        for k, v in sorted(signal_counts.items(), key=lambda kv: -kv[1])
+        f"{_SIGNAL_EMOJI[k]} {v}" for k, v in sorted(signal_counts.items(), key=lambda kv: -kv[1])
     )
 
     rec_lines = _recommendations(latest, z2_pct, signal_counts, avg_hrv, prior7)
@@ -156,12 +150,12 @@ def render_briefing(df: pd.DataFrame, *, today: date | None = None) -> str:
 **Signal:** {headline} ({sig_summary})
 
 **Recovery snapshot — last 7 days:**
-- RHR: avg **{_fmt_or(avg_rhr, '.0f')} bpm** {rhr_trend}
-- HRV (SDNN): avg **{_fmt_or(avg_hrv, '.1f')} ms** {hrv_trend}
-- Zone 2 minutes (rolling 7d): **{_fmt_or(z2_7d, '.0f')} / {_ZONE_2_WEEKLY_TARGET_MIN} min** \
-({_fmt_or(z2_pct, '.0f')}%){z2_alert}
+- RHR: avg **{_fmt_or(avg_rhr, ".0f")} bpm** {rhr_trend}
+- HRV (SDNN): avg **{_fmt_or(avg_hrv, ".1f")} ms** {hrv_trend}
+- Zone 2 minutes (rolling 7d): **{_fmt_or(z2_7d, ".0f")} / {_ZONE_2_WEEKLY_TARGET_MIN} min** \
+({_fmt_or(z2_pct, ".0f")}%){z2_alert}
 - Strength sessions (last 7d): **{strength_7d}**
-- ACWR (acute:chronic): **{_fmt_or(acwr, '.2f')}**
+- ACWR (acute:chronic): **{_fmt_or(acwr, ".2f")}**
 
 **Day-by-day:**
 

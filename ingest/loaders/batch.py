@@ -9,6 +9,7 @@ Dispatch table:
 One failing file never stops the batch — errors are collected and
 surfaced in the BatchResult for the caller to decide what to do.
 """
+
 from __future__ import annotations
 
 import logging

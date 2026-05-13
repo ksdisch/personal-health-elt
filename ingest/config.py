@@ -1,4 +1,5 @@
 """Runtime configuration: loads .env and exposes paths + DB URL."""
+
 from __future__ import annotations
 
 import os
@@ -9,9 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RAW_DATA_PATH = Path(
-    os.getenv("HEALTH_EXPORT_PATH", str(PROJECT_ROOT / "data" / "raw"))
-).resolve()
+RAW_DATA_PATH = Path(os.getenv("HEALTH_EXPORT_PATH", str(PROJECT_ROOT / "data" / "raw"))).resolve()
 
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))

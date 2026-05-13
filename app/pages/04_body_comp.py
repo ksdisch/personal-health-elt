@@ -1,4 +1,5 @@
 """Body composition — weight trend, body fat %, lean mass."""
+
 import streamlit as st
 
 st.title("Body Composition")

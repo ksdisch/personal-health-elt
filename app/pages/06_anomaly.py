@@ -10,6 +10,7 @@ same day — both panels going red together is a 24–48 hour early warning.
 Sleep duration will join here as a third panel once the categories loader
 lands and a mart_daily_sleep is built.
 """
+
 from __future__ import annotations
 
 import altair as alt
@@ -120,8 +121,7 @@ with right:
             direction=recent["z_score"].apply(lambda z: "↑" if z > 0 else "↓"),
         )
         st.dataframe(
-            recent[["day", "metric_label", "direction", "value", "z_score"]]
-            .rename(
+            recent[["day", "metric_label", "direction", "value", "z_score"]].rename(
                 columns={
                     "day": "Day",
                     "metric_label": "Metric",
@@ -140,14 +140,9 @@ with right:
         )
 
 # --------------------------------------------------- combined-day callout
-combined = (
-    df.pivot(index="day", columns="metric", values="z_score")
-    .dropna(how="all")
-)
+combined = df.pivot(index="day", columns="metric", values="z_score").dropna(how="all")
 if {"rhr_bpm", "hrv_ms"}.issubset(combined.columns):
-    flagged = combined[
-        (combined["rhr_bpm"] > 2) & (combined["hrv_ms"] < -2)
-    ]
+    flagged = combined[(combined["rhr_bpm"] > 2) & (combined["hrv_ms"] < -2)]
     if not flagged.empty:
         st.warning(
             f"**{len(flagged)} day(s)** in the window had RHR ↑ AND HRV ↓ "

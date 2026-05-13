@@ -12,6 +12,7 @@ Color encodes recency (older = faded). The bottom-right quadrant filling up
 is the strongest single signal that you're consistently pushing through
 fatigue — the kind of pattern that's invisible in line charts.
 """
+
 from __future__ import annotations
 
 import altair as alt
@@ -137,18 +138,14 @@ hline = (
 # not a field-driven encoding.
 right_labels = pd.DataFrame(
     [
-        {"x": x_domain[1], "y": y_domain[1],
-         "label": "Trained hard, recovered ✅"},
-        {"x": x_domain[1], "y": y_domain[0],
-         "label": "Trained hard, strained ⚠️"},
+        {"x": x_domain[1], "y": y_domain[1], "label": "Trained hard, recovered ✅"},
+        {"x": x_domain[1], "y": y_domain[0], "label": "Trained hard, strained ⚠️"},
     ]
 )
 left_labels = pd.DataFrame(
     [
-        {"x": x_domain[0], "y": y_domain[1],
-         "label": "Rested, recovered"},
-        {"x": x_domain[0], "y": y_domain[0],
-         "label": "Rested, strained (deload)"},
+        {"x": x_domain[0], "y": y_domain[1], "label": "Rested, recovered"},
+        {"x": x_domain[0], "y": y_domain[0], "label": "Rested, strained (deload)"},
     ]
 )
 label_kwargs = dict(fontSize=11, fontStyle="italic", color="#64748b", dy=-4)
@@ -172,18 +169,11 @@ st.altair_chart(
 hard = df["training_load_today"] >= load_median
 recovered = df["hrv_ms"] >= hrv_median
 df["quadrant"] = (
-    np.where(hard, "Hard", "Rested")
-    + " + "
-    + np.where(recovered, "recovered", "strained")
+    np.where(hard, "Hard", "Rested") + " + " + np.where(recovered, "recovered", "strained")
 )
 
 st.subheader(f"Quadrant breakdown — last {window_days} days")
-counts = (
-    df["quadrant"]
-    .value_counts()
-    .rename_axis("Quadrant")
-    .reset_index(name="Days")
-)
+counts = df["quadrant"].value_counts().rename_axis("Quadrant").reset_index(name="Days")
 counts["Share"] = (counts["Days"] / counts["Days"].sum() * 100).round(1).astype(str) + "%"
 
 c1, c2 = st.columns([1, 2])

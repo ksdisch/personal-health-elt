@@ -15,6 +15,7 @@ The flow is idempotent: re-running it on a clean drop folder is a no-op
 because every loader checks raw.file_inventory before doing work, and
 ON CONFLICT DO NOTHING handles row-level overlaps.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,9 +46,14 @@ def run_dbt_build() -> int:
     """Trigger `dbt build` via subprocess. Returns the exit code (0 = success)."""
     log = get_run_logger()
     cmd = [
-        "uv", "run", "dbt", "build",
-        "--project-dir", str(PROJECT_ROOT / "transform"),
-        "--profiles-dir", str(PROJECT_ROOT / "transform"),
+        "uv",
+        "run",
+        "dbt",
+        "build",
+        "--project-dir",
+        str(PROJECT_ROOT / "transform"),
+        "--profiles-dir",
+        str(PROJECT_ROOT / "transform"),
     ]
     log.info("Running: %s", " ".join(cmd))
     proc = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
@@ -61,11 +67,11 @@ def weekly_load() -> dict[str, int | None]:
     result = load_drop_folder(RAW_DATA_PATH)
 
     summary: dict[str, int | None] = {
-        "files_loaded":       result.files_loaded,
+        "files_loaded": result.files_loaded,
         "files_already_seen": result.files_already_loaded,
-        "files_skipped":      len(result.skipped),
-        "files_errored":      len(result.errors),
-        "rows_inserted":      result.total_rows_inserted,
+        "files_skipped": len(result.skipped),
+        "files_errored": len(result.errors),
+        "rows_inserted": result.total_rows_inserted,
     }
 
     if result.errors:

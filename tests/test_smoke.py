@@ -6,6 +6,7 @@ syntax error). `compile` validates syntax + parse-time errors without
 executing module bodies — so we don't need a live Postgres connection
 to run this in CI.
 """
+
 from __future__ import annotations
 
 import pathlib

@@ -3,6 +3,7 @@
 Visualizes mart_training_load + mart_workout_zones. Shows what raw
 workout data becomes once range-joined to HR samples and bucketed.
 """
+
 import altair as alt
 import pandas as pd
 import streamlit as st

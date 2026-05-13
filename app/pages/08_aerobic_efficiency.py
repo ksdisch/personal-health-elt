@@ -12,6 +12,7 @@ Apple's noisy per-workout estimates.
 Sources: mart_monthly_aerobic_efficiency (built off int_workout_hr_samples
 range-join) + mart_daily_vo2max.
 """
+
 from __future__ import annotations
 
 import altair as alt
@@ -133,9 +134,7 @@ else:
     vo2 = vo2.sort_values("day").copy()
     # 6-month rolling avg by date (not by sample count) — handles sparse data
     vo2 = vo2.set_index("day")
-    vo2["rolling_6mo"] = (
-        vo2["vo2max"].rolling("180D", min_periods=3).mean()
-    )
+    vo2["rolling_6mo"] = vo2["vo2max"].rolling("180D", min_periods=3).mean()
     vo2 = vo2.reset_index()
 
     points = (

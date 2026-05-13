@@ -3,6 +3,7 @@
 One tab per metric. Each tab uses the same _render helper so the layout
 stays consistent as more metrics are added.
 """
+
 import pandas as pd
 import streamlit as st
 
@@ -45,9 +46,7 @@ def _render(
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-tab_rhr, tab_hrv, tab_vo2, tab_weight = st.tabs(
-    ["Resting HR", "HRV", "VO₂ Max", "Weight"]
-)
+tab_rhr, tab_hrv, tab_vo2, tab_weight = st.tabs(["Resting HR", "HRV", "VO₂ Max", "Weight"])
 
 with tab_rhr:
     _render(

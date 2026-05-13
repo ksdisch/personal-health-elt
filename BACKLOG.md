@@ -17,12 +17,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** S
 - **Added:** 2026-05-11
 
-### [Improvement] Add `.pre-commit-config.yaml` (ruff + mypy)
-- **Why:** CI lints on push but no local gate exists — issues are caught only after pushing a branch. For a portfolio repo, a pre-commit hook catches style + typing regressions before they hit a branch and also demonstrates dev-experience hygiene.
-- **Acceptance:** `.pre-commit-config.yaml` at repo root runs `ruff check`, `ruff format --check`, and `mypy ingest app` on `pre-commit` and `pre-push`. Hook install step documented in README under "Local development."
-- **Size:** S
-- **Added:** 2026-05-11
-
 ### [Improvement] Prefect: retries + failure alert on `run_dbt_build` task
 - **Why:** `ingest/flows/weekly_load.py` invokes `run_dbt_build()` once with no retry logic. A transient Postgres restart or a flaky dbt compile silently kills the run from the operator's perspective — there's no notification path.
 - **Acceptance:** `run_dbt_build` decorated with `@task(retries=2, retry_delay_seconds=60)`; on terminal failure the flow surfaces a non-zero exit AND emits a structured alert (Prefect log at ERROR with a tail of dbt stderr, or a Slack/email hook). Unit test simulates failure and confirms retry + final-failure logging.
@@ -176,6 +170,14 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Improvement] Add `.pre-commit-config.yaml` (ruff + mypy)
+- **Why:** CI lints on push but no local gate existed — issues were caught only after pushing a branch. For a portfolio repo, a pre-commit hook catches style + typing regressions before they hit a branch and also demonstrates dev-experience hygiene.
+- **Acceptance:** `.pre-commit-config.yaml` at repo root runs `ruff check`, `ruff format --check`, and `mypy ingest` on `pre-commit` and `pre-push`. Hook install step documented in README.
+- **Size:** S
+- **Added:** 2026-05-11
+- **Started:** 2026-05-12
+- **Completed:** 2026-05-12 — branch `feat/pre-commit-hook`. Local hooks (`language: system`) so ruff + mypy versions never drift between the hook and CI's `uv` environment. Staged execution: `ruff check` + `ruff format --check` on `pre-commit` (fast, every commit); `mypy ingest` on `pre-push` (slower, only on push). Pre-shipped a one-time `ruff format .` mechanical reformat of 24 pre-existing-drift files (separate commit so the hook config reviews cleanly). mypy scoped to `ingest` to match CI — `app/` follow-up filed in the prior CI-hardening ship. Manual verification: `pre-commit run --all-files` and `pre-commit run --hook-stage pre-push --all-files` both pass.
 
 ### [Feature] Add source freshness checks on raw.{quantities,categories,workouts}
 - **Why:** `transform/models/sources.yml` declared all three raw tables but set no `freshness:` or `loaded_at_field:`. For an ELT pipeline where ingest runs on a schedule, stale upstream data was a silent failure mode — a dead loader produced no warning until a Streamlit page rendered empty.

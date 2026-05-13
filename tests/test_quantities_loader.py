@@ -1,4 +1,5 @@
 """Unit tests for parse_quantities_csv (pure function, no DB)."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -39,8 +40,15 @@ def test_parse_without_sep_hint(tmp_path: Path) -> None:
 def test_parse_renames_columns_to_snake_case(tmp_path: Path) -> None:
     df = parse_quantities_csv(_write_csv(tmp_path, include_sep_hint=True))
     expected = {
-        "metric_type", "source_name", "source_version", "product_type",
-        "device", "start_ts", "end_ts", "unit", "value",
+        "metric_type",
+        "source_name",
+        "source_version",
+        "product_type",
+        "device",
+        "start_ts",
+        "end_ts",
+        "unit",
+        "value",
     }
     assert set(df.columns) == expected
 
