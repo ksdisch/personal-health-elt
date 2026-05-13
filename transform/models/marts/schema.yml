@@ -388,6 +388,65 @@ models:
         tests:
           - not_null
 
+  - name: mart_workout_hrr
+    description: >
+      Per-workout heart-rate recovery (HRR). One row per workout with
+      peak_hr_bpm (max HR inside the workout) plus the HR drop measured
+      at 30s / 60s / 120s after workout end. Each `hrr_*s` column is
+      tolerance-gated — if no HR sample falls within ±15s (or ±30s for
+      the 120s target) of its target offset, the column stays NULL
+      rather than mislabeling a faraway sample. HRR shifts months
+      before resting HR does, so this mart is the leading aerobic-
+      capacity signal.
+    columns:
+      - name: activity_type
+        description: Workout activity (Running, Cycling, Walking, ...).
+        tests:
+          - not_null
+      - name: day_local
+        description: Calendar date of workout start (America/Chicago).
+        tests:
+          - not_null
+      - name: workout_start_local
+        description: Workout start in America/Chicago.
+        tests:
+          - not_null
+      - name: workout_end_local
+        description: Workout end in America/Chicago.
+        tests:
+          - not_null
+      - name: peak_hr_bpm
+        description: Maximum HR (bpm) recorded inside the workout window.
+        tests:
+          - not_null
+      - name: hr_at_30s
+        description: HR (bpm) of the post-workout sample closest to 30s after end. NULL if no sample within ±15s.
+      - name: offset_at_30s
+        description: Actual seconds-after-end of the sample chosen for hr_at_30s.
+      - name: hrr_30s
+        description: >
+          peak_hr_bpm minus hr_at_30s, when a sample exists within ±15s
+          of the 30s target. NULL otherwise.
+      - name: hr_at_60s
+        description: HR (bpm) of the post-workout sample closest to 60s after end. NULL if no sample within ±15s.
+      - name: offset_at_60s
+        description: Actual seconds-after-end of the sample chosen for hr_at_60s.
+      - name: hrr_60s
+        description: >
+          peak_hr_bpm minus hr_at_60s, when a sample exists within ±15s
+          of the 60s target. NULL otherwise. This is the headline HRR
+          metric — typical values 25–35 bpm for well-conditioned
+          individuals, 40+ excellent, <15 poor.
+      - name: hr_at_120s
+        description: HR (bpm) of the post-workout sample closest to 120s after end. NULL if no sample within ±30s.
+      - name: offset_at_120s
+        description: Actual seconds-after-end of the sample chosen for hr_at_120s.
+      - name: hrr_120s
+        description: >
+          peak_hr_bpm minus hr_at_120s, when a sample exists within
+          ±30s of the 120s target. Tolerance is looser here because
+          post-workout samples thin out fast. NULL otherwise.
+
 exposures:
   - name: weekly_health_review
     label: weekly-health-review (Claude skill)

@@ -8,7 +8,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from app.lib.queries import training_load, workout_zones
+from app.lib.queries import training_load, workout_hrr, workout_zones
 
 st.title("Training Load")
 st.caption(
@@ -141,3 +141,70 @@ else:
         use_container_width=True,
         hide_index=True,
     )
+
+# ---------------------------------------- Heart-rate recovery (HRR) section
+st.subheader("Heart-rate recovery (HRR)")
+st.caption(
+    "Peak HR minus HR ~60s after workout end. A leading aerobic-capacity "
+    "signal that shifts months before resting HR does. Source: "
+    "`mart_workout_hrr`. Filtered to workouts with peak HR ≥ 140 bpm "
+    "(where the metric is meaningful). Typical: 25–35 bpm well-conditioned, "
+    "40+ excellent, <15 poor."
+)
+
+hrr_df = workout_hrr()
+hrr_qualified = hrr_df[(hrr_df["peak_hr_bpm"] >= 140) & hrr_df["hrr_60s"].notna()].copy()
+
+if hrr_qualified.empty:
+    st.info(
+        "No workouts yet with peak HR ≥ 140 and a valid HR sample within "
+        "±15s of the 60s post-workout target."
+    )
+else:
+    # Headline stats over the last 30 / 90 days.
+    today = pd.Timestamp(hrr_qualified["day_local"].max())
+    last_30 = hrr_qualified[hrr_qualified["day_local"] >= today - pd.Timedelta(days=30)]
+    last_90 = hrr_qualified[hrr_qualified["day_local"] >= today - pd.Timedelta(days=90)]
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "Median HRR (60s, all)",
+        f"{hrr_qualified['hrr_60s'].median():.0f} bpm",
+        help=f"Across {len(hrr_qualified)} qualifying workouts.",
+    )
+    c2.metric(
+        "Last 30 days",
+        f"{last_30['hrr_60s'].median():.0f} bpm" if not last_30.empty else "—",
+        help=f"{len(last_30)} workouts.",
+    )
+    c3.metric(
+        "Last 90 days",
+        f"{last_90['hrr_60s'].median():.0f} bpm" if not last_90.empty else "—",
+        help=f"{len(last_90)} workouts.",
+    )
+
+    # Per-workout HRR_60s over time, sized by peak HR (intensity).
+    hrr_chart = (
+        alt.Chart(hrr_qualified)
+        .mark_circle(opacity=0.8)
+        .encode(
+            x=alt.X("workout_start_local:T", title=None),
+            y=alt.Y("hrr_60s:Q", title="HRR at 60s (bpm drop)"),
+            size=alt.Size(
+                "peak_hr_bpm:Q",
+                title="Peak HR",
+                scale=alt.Scale(range=[50, 300]),
+            ),
+            color=alt.Color("activity_type:N", legend=alt.Legend(title=None, orient="top")),
+            tooltip=[
+                alt.Tooltip("workout_start_local:T", title="Started"),
+                "activity_type",
+                alt.Tooltip("peak_hr_bpm:Q", title="Peak HR"),
+                alt.Tooltip("hrr_30s:Q", title="HRR 30s"),
+                alt.Tooltip("hrr_60s:Q", title="HRR 60s"),
+                alt.Tooltip("hrr_120s:Q", title="HRR 120s"),
+            ],
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(hrr_chart, use_container_width=True)
