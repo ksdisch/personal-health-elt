@@ -387,3 +387,22 @@ models:
           per awakening. Clamped at 0 on the low end.
         tests:
           - not_null
+
+exposures:
+  - name: weekly_health_review
+    label: weekly-health-review (Claude skill)
+    type: application
+    maturity: medium
+    description: >
+      External Claude skill that turns `mart_recovery_state` into a
+      weekly briefing in the user's vault. Read CLAUDE.md "Public API"
+      and the README's contract cell before changing the upstream
+      mart: renames, drops, or unit changes must be reflected in the
+      skill in lockstep. The dbt `accepted_values` + `unique` tests on
+      `recovery_signal` / `day` are the durable contract surface.
+    url: https://github.com/ksdisch/weekly-health-review
+    owner:
+      name: Kyle Disch
+      email: kstan.disch@gmail.com
+    depends_on:
+      - ref('mart_recovery_state')
