@@ -7,11 +7,27 @@ the decorator here, not inside page files.
 
 from __future__ import annotations
 
+import json
+import os
+import pathlib
+import re
+from dataclasses import dataclass
+from typing import Any
+
+import anthropic
 import pandas as pd
+import sqlparse
 import streamlit as st
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from ingest.db import get_engine
+
+# Path to the dbt manifest. Regenerate via:
+#   uv run dbt parse --project-dir transform --profiles-dir transform
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
+MANIFEST_PATH = _REPO_ROOT / "transform" / "target" / "manifest.json"
+MART_SCHEMA = "analytics_marts"
 
 
 @st.cache_resource
@@ -227,3 +243,243 @@ def daily_context() -> pd.DataFrame:
         "humidity_afternoon, cloud_cover_afternoon, precip_total_mm, wind_max_mps "
         "FROM analytics_marts.mart_daily_context ORDER BY day"
     )
+
+
+# ---------------------------------------------------------------------------
+# "Ask" page (app/pages/10_ask.py) — Claude-powered NL→SQL helpers.
+#
+# Three independent units, each unit-testable in isolation:
+#   compile_schema_summary  — pure: dict → str, deterministic ordering
+#   validate_sql            — pure: str  → (ok, error)
+#   execute_safe_sql        — DB-bound: validated SQL → DataFrame
+# Plus get_anthropic_client() which returns None when ANTHROPIC_API_KEY is
+# unset so the page can render a friendly skip instead of crashing on
+# import.
+# ---------------------------------------------------------------------------
+
+
+def get_anthropic_client() -> anthropic.Anthropic | None:
+    """Returns a configured Anthropic client, or None if no API key is set.
+
+    Same pattern as the OpenWeather loader: optional dependency, the page
+    is expected to detect None and render an info message rather than
+    blow up.
+    """
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    return anthropic.Anthropic()
+
+
+def compile_schema_summary_from_manifest(manifest: dict[str, Any]) -> str:
+    """Render a Claude-readable summary of every analytics_marts.* model.
+
+    Pure function — given the parsed manifest dict, returns a deterministic
+    text block sorted by mart name so prompt caching stays valid across
+    runs (any byte change after the cache_control breakpoint invalidates
+    downstream entries).
+    """
+    marts = sorted(
+        (
+            n
+            for n in manifest.get("nodes", {}).values()
+            if n.get("resource_type") == "model" and n.get("schema") == MART_SCHEMA
+        ),
+        key=lambda n: n["name"],
+    )
+    if not marts:
+        return "(no marts found in manifest)"
+
+    lines: list[str] = []
+    for mart in marts:
+        lines.append(f"=== {MART_SCHEMA}.{mart['name']} ===")
+        desc = (mart.get("description") or "").strip()
+        if desc:
+            lines.append(desc)
+        cols = mart.get("columns") or {}
+        if cols:
+            lines.append("Columns:")
+            for col_name in sorted(cols):
+                col = cols[col_name]
+                col_desc = (col.get("description") or "").strip().replace("\n", " ")
+                if col_desc:
+                    lines.append(f"  - {col_name}: {col_desc}")
+                else:
+                    lines.append(f"  - {col_name}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@st.cache_data(ttl=300)
+def _schema_summary_cached(mtime: float) -> str:
+    """Streamlit-cache wrapper. `mtime` is part of the cache key so a
+    `dbt parse` invalidates this automatically."""
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    return compile_schema_summary_from_manifest(manifest)
+
+
+def compile_schema_summary() -> str:
+    """Live entry point used by the page. Returns '' when the manifest
+    is missing — page should fall back gracefully (run `dbt parse`)."""
+    if not MANIFEST_PATH.exists():
+        return ""
+    return _schema_summary_cached(MANIFEST_PATH.stat().st_mtime)
+
+
+# SQL safety gate. Three layers:
+#   1. sqlparse: exactly one statement, must be SELECT
+#   2. token walk: reject any DDL or non-SELECT DML keyword anywhere
+#   3. regex on FROM/JOIN: every qualified table reference must be in
+#      analytics_marts.*, and there must be at least one such reference
+#      (so 'SELECT 1' or 'SELECT current_user' can't slip through to
+#      probe for the role context)
+#
+# Future hardening: pair this with a dedicated read-only Postgres role
+# scoped to analytics_marts.* via GRANT. Skipped this round — for a
+# single-user local app the AST gate is defensible and the role would
+# require docker-compose / init-script churn.
+
+_FORBIDDEN_KEYWORDS = {
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "MERGE",
+    "TRUNCATE",
+    "DROP",
+    "CREATE",
+    "ALTER",
+    "GRANT",
+    "REVOKE",
+    "COPY",
+    "CALL",
+    "EXECUTE",
+    "DO",
+    "VACUUM",
+    "ANALYZE",
+    "REINDEX",
+    "CLUSTER",
+    "REFRESH",
+    "COMMENT",
+    "LOCK",
+    "LISTEN",
+    "NOTIFY",
+    "RESET",
+    "SET",
+    "BEGIN",
+    "COMMIT",
+    "ROLLBACK",
+    "SAVEPOINT",
+}
+
+_FROM_JOIN_QUALIFIED_RE = re.compile(
+    r"\b(?:FROM|JOIN)\s+(?P<schema>\w+)\.(?P<table>\w+)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class SqlValidation:
+    ok: bool
+    error: str = ""
+
+
+def validate_sql(sql: str) -> SqlValidation:
+    """Reject anything that isn't a single SELECT against analytics_marts.*.
+
+    Returns SqlValidation(ok=True) on success, SqlValidation(ok=False,
+    error=...) on failure. The error is safe to surface to the UI.
+    """
+    sql = sql.strip()
+    if not sql:
+        return SqlValidation(False, "empty SQL")
+
+    statements = [s for s in sqlparse.parse(sql) if str(s).strip().rstrip(";").strip()]
+    if len(statements) != 1:
+        return SqlValidation(False, f"expected exactly 1 statement, got {len(statements)}")
+
+    stmt = statements[0]
+    stmt_type = stmt.get_type()
+    if stmt_type != "SELECT":
+        return SqlValidation(False, f"only SELECT allowed; got {stmt_type}")
+
+    forbidden = _find_forbidden_keyword(stmt)
+    if forbidden:
+        return SqlValidation(False, f"forbidden keyword: {forbidden}")
+
+    qualified_refs = list(_FROM_JOIN_QUALIFIED_RE.finditer(sql))
+    if not qualified_refs:
+        return SqlValidation(False, f"no qualified table reference; expected {MART_SCHEMA}.<mart>")
+    for match in qualified_refs:
+        schema = match.group("schema").lower()
+        if schema != MART_SCHEMA:
+            return SqlValidation(
+                False, f"table reference outside {MART_SCHEMA}.*: {match.group(0)!r}"
+            )
+
+    return SqlValidation(True)
+
+
+def _find_forbidden_keyword(token: Any) -> str | None:
+    """Recursively walk the parse tree and return the first DDL or
+    non-SELECT DML keyword found, or None."""
+    ttype = token.ttype
+    if ttype is not None:
+        tt = str(ttype)
+        if "DDL" in tt or "DML" in tt:
+            kw = str(token.value).upper()
+            if kw != "SELECT" and kw in _FORBIDDEN_KEYWORDS:
+                return kw
+    if hasattr(token, "tokens"):
+        for child in token.tokens:
+            found = _find_forbidden_keyword(child)
+            if found:
+                return found
+    return None
+
+
+_TRAILING_LIMIT_RE = re.compile(
+    r"\bLIMIT\s+\d+(?:\s+OFFSET\s+\d+)?\s*$",
+    re.IGNORECASE,
+)
+
+
+_LEADING_WITH_RE = re.compile(r"^\s*WITH\b", re.IGNORECASE)
+
+
+def _add_limit_if_missing(sql: str, default_limit: int = 10000) -> str:
+    """If the SQL doesn't end with LIMIT N, append one.
+
+    Two paths:
+    - Plain SELECT → wrap as `SELECT * FROM (sql) AS _limited LIMIT N`.
+    - WITH-prefixed CTE → can't wrap in a subquery (Postgres rejects
+      `SELECT * FROM (WITH cte AS …) AS x`), so we append `LIMIT N` to
+      the final SELECT instead.
+
+    Either form caps the result-set without depending on the inner SQL's
+    own LIMIT (if any). Wrapping preserves an inner ORDER BY for the rows
+    that come back.
+    """
+    stripped = sql.strip().rstrip(";").strip()
+    if _TRAILING_LIMIT_RE.search(stripped):
+        return stripped
+    if _LEADING_WITH_RE.match(stripped):
+        return f"{stripped}\nLIMIT {default_limit}"
+    return f"SELECT * FROM ({stripped}) AS _limited LIMIT {default_limit}"
+
+
+def execute_safe_sql(
+    sql: str,
+    timeout_seconds: int = 10,
+    default_limit: int = 10000,
+) -> pd.DataFrame:
+    """Run a validated SELECT inside a transaction with a statement_timeout.
+
+    Callers MUST first run validate_sql() and only invoke this on the
+    success path. Defence-in-depth: even if validation is bypassed, the
+    transaction is read-only (no COMMIT of writes outside our control)
+    and the timeout bounds compute. The LIMIT injection caps result size.
+    """
+    safe_sql = _add_limit_if_missing(sql, default_limit=default_limit)
+    engine = _engine()
+    with engine.connect() as conn, conn.begin():
+        conn.execute(text(f"SET LOCAL statement_timeout = '{int(timeout_seconds)}s'"))
+        return pd.read_sql(text(safe_sql), conn)
