@@ -14,7 +14,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from app.lib.queries import sleep_nights, sleep_stages
+from app.lib.queries import sleep_naps, sleep_nights, sleep_stages
 
 # Stage display ordering / labels / colors. Keep these in sync with the
 # `sleep_stage` values emitted by mart_sleep_stages.
@@ -58,12 +58,14 @@ WEIGHT_FRAGMENTATION = 1.5
 
 st.title("Sleep")
 st.caption(
-    "Per-night composite score, hypnogram, and 14-day trend. "
-    "Source: mart_sleep_nights + mart_sleep_stages."
+    "Per-night composite score, hypnogram, and 14-day trend. Main sleep "
+    "only — same-day naps land in `mart_sleep_naps` and are summarized "
+    "below. Source: mart_sleep_nights + mart_sleep_stages + mart_sleep_naps."
 )
 
 nights_df = sleep_nights()
 stages_df = sleep_stages()
+naps_df = sleep_naps()
 
 if nights_df.empty or stages_df.empty:
     st.info("No sleep data yet — run the ingest flow and dbt build first.")
@@ -160,6 +162,35 @@ eff_chart = (
 )
 
 st.altair_chart(score_chart & eff_chart, use_container_width=True)
+
+# ===================================================== Section 3b: naps
+trend_window_start = trend_df["night_date"].min()
+naps_in_window = naps_df[naps_df["nap_date"] >= trend_window_start].copy()
+
+if not naps_in_window.empty:
+    st.subheader("Naps in the trend window")
+    total_nap_minutes = int(naps_in_window["time_asleep_min"].sum())
+    nap_hours, nap_minutes = divmod(total_nap_minutes, 60)
+
+    n1, n2 = st.columns(2)
+    n1.metric("Naps recorded", f"{len(naps_in_window)}")
+    n2.metric("Total nap sleep", f"{nap_hours}h {nap_minutes}m")
+
+    nap_display = naps_in_window.assign(
+        nap_date=naps_in_window["nap_date"].dt.strftime("%a %b %d"),
+        nap_start_local=naps_in_window["nap_start_local"].dt.strftime("%I:%M %p"),
+        nap_end_local=naps_in_window["nap_end_local"].dt.strftime("%I:%M %p"),
+    )[
+        [
+            "nap_date",
+            "nap_start_local",
+            "nap_end_local",
+            "duration_min",
+            "time_asleep_min",
+            "awakening_count",
+        ]
+    ]
+    st.dataframe(nap_display, use_container_width=True, hide_index=True)
 
 # ============================================ Section 4: score breakdown
 st.subheader("What's hurting last night's score")

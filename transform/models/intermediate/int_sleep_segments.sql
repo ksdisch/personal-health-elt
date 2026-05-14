@@ -14,8 +14,8 @@
 -- Filters out null / point-in-time rows; only true SleepAnalysis intervals
 -- with both endpoints flow through.
 --
--- Used by mart_sleep_stages (hypnogram) and mart_sleep_nights (per-night
--- rollup with composite score).
+-- Used by mart_sleep_stages (hypnogram, naps included) and int_sleep_periods
+-- (which gap-splits segments into main-sleep + nap periods).
 
 with segments as (
     select

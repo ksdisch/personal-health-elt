@@ -70,3 +70,62 @@ models:
         description: Device that recorded the segment (passthrough from staging).
       - name: source_priority
         description: "1=Apple Watch, 2=iPhone, 3=other/third-party."
+
+  - name: int_sleep_periods
+    description: >
+      Per-period rollup. Within a night_date, segments separated by a gap
+      longer than 120 minutes are split into separate periods, so a main
+      sleep + an afternoon nap on the same calendar day produce two rows
+      rather than one. is_main_period flags the longest period per night
+      (tiebreaker: earliest start). Periods shorter than 5 minutes of
+      total span are filtered out as watch-misfire noise. mart_sleep_nights
+      consumes the main period; mart_sleep_naps consumes the rest.
+    columns:
+      - name: night_date
+        description: Night attribution (noon-to-noon) inherited from int_sleep_segments.
+        tests:
+          - not_null
+      - name: period_seq
+        description: 1-indexed within-night identifier (1 = chronologically first period).
+        tests:
+          - not_null
+      - name: period_start_local
+        description: Earliest segment start in the period (America/Chicago).
+        tests:
+          - not_null
+      - name: period_end_local
+        description: Latest segment end in the period (America/Chicago).
+        tests:
+          - not_null
+      - name: period_duration_min
+        description: Wall-clock span of the period in minutes (end - start).
+        tests:
+          - not_null
+      - name: time_asleep_min
+        description: >
+          Minutes asleep within the period (sum of asleepCore/Deep/REM/Unspecified
+          plus bare asleep). May be 0 for an all-awake period.
+        tests:
+          - not_null
+      - name: rem_min
+        description: Minutes in asleepREM within the period.
+      - name: deep_min
+        description: Minutes in asleepDeep within the period.
+      - name: core_min
+        description: Minutes in asleepCore within the period.
+      - name: unspecified_asleep_min
+        description: Minutes in asleepUnspecified plus bare asleep within the period.
+      - name: awake_min
+        description: Minutes in awake segments within the period.
+      - name: in_bed_explicit_min
+        description: Minutes from explicit inBed segments (preferred when present).
+      - name: awakening_count
+        description: Count of awake segments within the period.
+        tests:
+          - not_null
+      - name: is_main_period
+        description: >
+          True for the longest period in the night (tiebreaker: earliest start).
+          mart_sleep_nights filters on this; mart_sleep_naps filters on its negation.
+        tests:
+          - not_null
