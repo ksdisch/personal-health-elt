@@ -179,6 +179,24 @@ def sleep_stages() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300)
+def sleep_naps() -> pd.DataFrame:
+    """One row per nap (non-main sleep period with actual sleep).
+
+    Companion to `sleep_nights()`: the main-sleep mart drops same-day naps,
+    so this mart is where they surface. Empty DataFrame when the user has
+    no recorded naps. nap_date is the calendar date the nap started on.
+    """
+    return pd.read_sql(
+        "SELECT nap_date, night_date, period_seq, nap_start_local, "
+        "nap_end_local, duration_min, time_asleep_min, awakening_count "
+        "FROM analytics_marts.mart_sleep_naps "
+        "ORDER BY nap_start_local",
+        _engine(),
+        parse_dates=["nap_date", "night_date", "nap_start_local", "nap_end_local"],
+    )
+
+
+@st.cache_data(ttl=300)
 def workout_hrr() -> pd.DataFrame:
     """Per-workout heart-rate recovery (HRR).
 

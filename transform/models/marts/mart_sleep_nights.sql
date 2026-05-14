@@ -1,8 +1,15 @@
 -- Per-night sleep rollup with a composite sleep score.
 --
 -- Inputs:
---   int_sleep_segments    — per-segment stages attributed to a night
+--   int_sleep_periods     — per-period rollup, with is_main_period flag
 --   sleep_score_weights   — single-row seed with composite-score parameters
+--
+-- Scope: rolls up the MAIN sleep period only. A same-day nap is a separate
+-- period (gap > 2h from the main run, by definition of int_sleep_periods)
+-- and lands in mart_sleep_naps instead. This keeps time-in-bed honest and
+-- prevents the composite score from being punished for napping. Before
+-- this split a nap+main collision could inflate time_in_bed to 14h and
+-- crater sleep_efficiency_pct.
 --
 -- Output:
 --   One row per night_date. Columns include total time in bed, time asleep,
@@ -21,20 +28,22 @@
 -- is 100. Fragmentation deducts points directly (1.5 per awakening with the
 -- default weight).
 
-with per_night as (
+with main_period as (
     select
         night_date,
-        sum(case when sleep_stage = 'asleepREM'         then duration_min else 0 end) as rem_min,
-        sum(case when sleep_stage = 'asleepDeep'        then duration_min else 0 end) as deep_min,
-        sum(case when sleep_stage = 'asleepCore'        then duration_min else 0 end) as core_min,
-        sum(case when sleep_stage in ('asleepUnspecified', 'asleep') then duration_min else 0 end) as unspecified_asleep_min,
-        sum(case when sleep_stage = 'awake'             then duration_min else 0 end) as awake_min,
-        sum(case when sleep_stage = 'inBed'             then duration_min else 0 end) as in_bed_explicit_min,
-        sum(case when sleep_stage = 'awake'             then 1 else 0 end)            as awakening_count,
-        min(start_ts_local) as bedtime_local,
-        max(end_ts_local)   as wake_time_local
-    from {{ ref('int_sleep_segments') }}
-    group by 1
+        period_start_local as bedtime_local,
+        period_end_local   as wake_time_local,
+        period_duration_min,
+        time_asleep_min,
+        rem_min,
+        deep_min,
+        core_min,
+        unspecified_asleep_min,
+        awake_min,
+        in_bed_explicit_min,
+        awakening_count
+    from {{ ref('int_sleep_periods') }}
+    where is_main_period
 ),
 
 derived as (
@@ -49,12 +58,12 @@ derived as (
         awakening_count,
         bedtime_local,
         wake_time_local,
-        (rem_min + deep_min + core_min + unspecified_asleep_min) as time_asleep_min,
+        time_asleep_min,
         case
             when in_bed_explicit_min > 0 then in_bed_explicit_min
-            else extract(epoch from (wake_time_local - bedtime_local)) / 60.0
+            else period_duration_min
         end as time_in_bed_min
-    from per_night
+    from main_period
 ),
 
 with_pcts as (

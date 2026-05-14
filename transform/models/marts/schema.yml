@@ -334,8 +334,12 @@ models:
   - name: mart_sleep_nights
     description: >
       Per-night sleep rollup with a composite sleep score in [0, 100].
-      One row per night_date. Combines stage minutes from int_sleep_segments
-      with weights/targets from the sleep_score_weights seed.
+      One row per night_date. Rolls up the MAIN sleep period only — a
+      same-day nap is a separate period (gap > 2h, classified in
+      int_sleep_periods) and lands in mart_sleep_naps instead, so
+      time_in_bed and sleep_efficiency_pct reflect actual nighttime
+      sleep without nap inflation. Score weights/targets live in the
+      sleep_score_weights seed.
     columns:
       - name: night_date
         description: Date you woke up (America/Chicago). Primary key.
@@ -386,6 +390,52 @@ models:
           efficiency, REM-of-sleep, and deep-of-sleep against per-user
           targets (sleep_score_weights seed), minus a fragmentation penalty
           per awakening. Clamped at 0 on the low end.
+        tests:
+          - not_null
+
+  - name: mart_sleep_naps
+    description: >
+      Per-nap rollup. One row per non-main sleep period containing actual
+      sleep time. Sibling to mart_sleep_nights: together they recover the
+      full picture without polluting either. nap_date is the calendar date
+      the nap actually happened on (period_start_local::date) — the more
+      intuitive grain for "naps you took today" — while night_date
+      preserves the upstream attribution for joins back to mart_sleep_nights.
+    columns:
+      - name: nap_date
+        description: Calendar date the nap started on (America/Chicago).
+        tests:
+          - not_null
+      - name: night_date
+        description: >
+          Upstream noon-to-noon night attribution from int_sleep_segments.
+          Equal to nap_date for naps that started before noon, nap_date + 1
+          for naps that started after noon.
+        tests:
+          - not_null
+      - name: period_seq
+        description: 1-indexed within-night identifier from int_sleep_periods.
+        tests:
+          - not_null
+      - name: nap_start_local
+        description: Period start in America/Chicago. Unique per row.
+        tests:
+          - not_null
+          - unique
+      - name: nap_end_local
+        description: Period end in America/Chicago.
+        tests:
+          - not_null
+      - name: duration_min
+        description: Wall-clock span of the nap in minutes (end - start).
+        tests:
+          - not_null
+      - name: time_asleep_min
+        description: Minutes asleep within the nap. Always > 0 by definition (model filter).
+        tests:
+          - not_null
+      - name: awakening_count
+        description: Count of awake segments within the nap.
         tests:
           - not_null
 
