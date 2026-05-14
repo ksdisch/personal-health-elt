@@ -82,9 +82,17 @@ def load_weather() -> WeatherLoadResult:
     `WeatherLoadResult(skipped=True)` when no API key is configured —
     so a portfolio clone without credentials gets a quiet no-op here.
     """
+    from ingest.config import OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON
+
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=_WEATHER_BACKFILL_DAYS - 1)
-    return load_weather_daily(start, end)
+    return load_weather_daily(
+        start,
+        end,
+        api_key=OPENWEATHER_API_KEY,
+        lat=OPENWEATHER_LAT,
+        lon=OPENWEATHER_LON,
+    )
 
 
 @task(retries=1, retry_delay_seconds=60)

@@ -138,16 +138,14 @@ def load_weather_daily(
 
     Returns ``WeatherLoadResult(skipped=True)`` and makes no HTTP calls
     when any of ``api_key`` / ``lat`` / ``lon`` is missing (config-less
-    portfolio clones). The weekly_load flow includes the weather task
-    unconditionally; absent config = silent no-op.
+    portfolio clones). Callers are expected to pass these explicitly —
+    the CLI and the weekly_load flow read them from ``ingest.config``
+    and forward — so an explicit ``api_key=None`` is unambiguously
+    "skip", not "fall back to whatever the environment has."
 
     ``fetch_fn`` is injected for tests so the unit suite can validate
     end-to-end behavior without real HTTP.
     """
-    api_key = api_key if api_key is not None else OPENWEATHER_API_KEY
-    lat = lat if lat is not None else OPENWEATHER_LAT
-    lon = lon if lon is not None else OPENWEATHER_LON
-
     if not api_key or lat is None or lon is None:
         logger.info("weather: no API key / coords configured, skipping")
         return WeatherLoadResult(
@@ -213,7 +211,13 @@ def _main() -> None:
     start = end - timedelta(days=days - 1)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    result = load_weather_daily(start, end)
+    result = load_weather_daily(
+        start,
+        end,
+        api_key=OPENWEATHER_API_KEY,
+        lat=OPENWEATHER_LAT,
+        lon=OPENWEATHER_LON,
+    )
     if result.skipped:
         print("status:    SKIPPED (OPENWEATHER_API_KEY / LAT / LON not configured)")
         return
