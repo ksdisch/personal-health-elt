@@ -544,6 +544,129 @@ models:
       - name: last_event_local
         description: Latest timed-event end (local). NULL on days with no timed events.
 
+  - name: mart_forecast_bands
+    description: >
+      Forward-looking forecast bands for daily recovery signals. Tall
+      format mirroring mart_daily_anomaly_bands: one row per
+      (metric, day) covering both historical days (so a chart can show
+      actuals → forecast continuously) and the next 7 forecast days.
+      Three metrics get fitted forecasts via Holt's linear method (pure
+      SQL via the `holt_forecast` macro): rhr_bpm, hrv_ms, training_load.
+      Hyperparameters are fixed at α=0.3, β=0.1 (sane defaults; grid-search
+      tuning is filed as a follow-up). Confidence bands are a heuristic,
+      not a rigorous prediction interval: ±1.96·σ·sqrt(h) where σ is the
+      in-sample residual stddev. The fourth metric, acwr, is NOT a fitted
+      time-series forecast — it is derived deterministically from the
+      forecasted training_load via the same rolling-window math as
+      mart_training_load (so it answers "where does ACWR land if my
+      recent pattern continues?"); forecast bands are NULL for derived
+      ACWR because cleanly propagating the underlying training_load
+      uncertainty would require Monte Carlo.
+    columns:
+      - name: metric
+        description: One of rhr_bpm, hrv_ms, training_load, acwr.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - rhr_bpm
+                  - hrv_ms
+                  - training_load
+                  - acwr
+      - name: day
+        description: Calendar date. Historical days OR future forecast days.
+        tests:
+          - not_null
+      - name: value
+        description: >
+          Actual observed value on historical rows. NULL on forecast rows.
+          For ACWR, also NULL on historical days where chronic_load_28d=0.
+      - name: smoothed
+        description: >
+          Holt level_t (the fitted in-sample value). Non-null on
+          historical rows for the three fitted metrics. NULL on forecast
+          rows and on all ACWR rows (ACWR is derived, not smoothed).
+      - name: forecast
+        description: >
+          Forecast value. NULL on historical rows. Non-null on forecast
+          rows: for fitted metrics, level_T + h·trend_T where T is the
+          last historical day and h is the horizon offset; for ACWR, the
+          deterministic projection from forecasted training_load.
+      - name: forecast_lower
+        description: >
+          forecast - 1.96·σ·sqrt(h). NULL on historical rows and on all
+          ACWR rows (bands omitted for derived ACWR).
+      - name: forecast_upper
+        description: forecast + 1.96·σ·sqrt(h). Same null pattern as forecast_lower.
+      - name: is_forecast
+        description: >
+          Partition flag the page uses to render history vs. forecast.
+          False on historical rows, true on forecast-horizon rows.
+        tests:
+          - not_null
+      - name: horizon_day_offset
+        description: >
+          Integer days from the last historical day for this metric.
+          1..7 on forecast rows, NULL on historical rows.
+
+  - name: mart_forecast_backtest
+    description: >
+      Walk-forward backtest of the Holt forecasts in mart_forecast_bands.
+      For each (metric, cutoff_day, horizon h ∈ 1..7) we synthesize the
+      forecast that WOULD have been made at end-of-cutoff_day for
+      cutoff_day + h (using only data ≤ cutoff_day, which Holt's online
+      smoothing gives us for free), then left-join the realized value.
+      One row per (metric, cutoff_day, horizon_days) with predicted vs.
+      realized values and absolute error. The page computes MAE / RMSE
+      / MAPE per metric per horizon by simple aggregation. ACWR is
+      omitted because its projection in mart_forecast_bands is a
+      deterministic derivation from forecasted training_load, so a
+      separate ACWR backtest would just double-count the training_load
+      forecast error already captured here.
+    columns:
+      - name: metric
+        description: One of rhr_bpm, hrv_ms, training_load.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - rhr_bpm
+                  - hrv_ms
+                  - training_load
+      - name: cutoff_day
+        description: >
+          The historical day whose level + trend produced the forecast.
+          Forecasts are made "at end of cutoff_day" for cutoff_day + h.
+        tests:
+          - not_null
+      - name: target_day
+        description: cutoff_day + horizon_days. The day being forecast.
+        tests:
+          - not_null
+      - name: horizon_days
+        description: >
+          Days ahead of cutoff_day this forecast targets. Always 1..7.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 7]
+                quote: false
+      - name: forecast
+        description: Predicted value (level_cutoff + h · trend_cutoff).
+        tests:
+          - not_null
+      - name: actual
+        description: Realized value at target_day from the source mart.
+        tests:
+          - not_null
+      - name: abs_error
+        description: abs(actual - forecast). Always ≥ 0.
+        tests:
+          - not_null
+
 exposures:
   - name: weekly_health_review
     label: weekly-health-review (Claude skill)
@@ -587,3 +710,23 @@ exposures:
     depends_on:
       - ref('mart_recovery_state')
       - ref('mart_training_load')
+
+  - name: forecast_page
+    label: 11_forecast (Streamlit page)
+    type: dashboard
+    maturity: low
+    description: >
+      Streamlit page at `app/pages/11_forecast.py` showing 7-day Holt
+      forecasts for RHR, HRV, training_load, and a derived ACWR
+      projection, plus the walk-forward backtest accuracy. Maturity is
+      `low` because the underlying ~30 days of history makes the
+      forecasts uncertain and the backtest n thin — the page surfaces
+      this honestly. Mature consumer would also be a candidate for the
+      `weekly-workout-planner` skill once that skill exists; today this
+      is the visualization-only consumer.
+    owner:
+      name: Kyle Disch
+      email: kstan.disch@gmail.com
+    depends_on:
+      - ref('mart_forecast_bands')
+      - ref('mart_forecast_backtest')
