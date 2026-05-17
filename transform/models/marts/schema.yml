@@ -562,3 +562,28 @@ exposures:
       email: kstan.disch@gmail.com
     depends_on:
       - ref('mart_recovery_state')
+
+  - name: daily_workout_coach
+    label: daily-workout-coach (Claude skill)
+    type: application
+    maturity: medium
+    description: >
+      External Claude skill that turns the latest `mart_recovery_state`
+      row plus the trailing 14 days of `mart_training_load` into a daily
+      workout recommendation card (session type, target zone, target
+      duration, rationale). Second downstream consumer of
+      `mart_recovery_state` — proves the public-API contract pattern by
+      composition. Implementation lives at
+      `~/Cowork/skills/daily-workout-coach/SKILL.md`; the recommendation
+      logic lives in this repo at `scripts/daily_workout_coach.py`. Any
+      schema change to either upstream mart requires updating that
+      script in lockstep — the dbt `accepted_values` test on
+      `recovery_signal` is the durable contract surface for the
+      `well_recovered / neutral / strained / insufficient_data`
+      vocabulary the coach branches on.
+    owner:
+      name: Kyle Disch
+      email: kstan.disch@gmail.com
+    depends_on:
+      - ref('mart_recovery_state')
+      - ref('mart_training_load')
