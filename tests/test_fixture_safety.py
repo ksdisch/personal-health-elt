@@ -17,6 +17,7 @@ after the test function returns.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
@@ -157,8 +158,26 @@ def test_cleanup_empty_snapshot_truncates(pg_engine: Engine) -> None:
     that environment, every row in the tables at teardown time is
     test-introduced and should be wiped. The branch also sidesteps
     psycopg3's empty-array element-type-inference issue.
+
+    SAFETY: this test exercises the TRUNCATE branch of
+    `cleanup_introduced_shas`. Running it against a populated local
+    Postgres would silently wipe the developer's real Apple Health
+    export data — exactly the failure mode the snapshot/restore design
+    is supposed to prevent. We skip when the table isn't already empty.
+    CI satisfies the precondition naturally (init script creates empty
+    tables); a dev who wants the assertion can wipe their local raw.*
+    explicitly first.
     """
     engine = pg_engine
+
+    with engine.connect() as conn:
+        existing_rows = conn.execute(text("SELECT count(*) FROM raw.file_inventory")).scalar_one()
+    if existing_rows > 0:
+        pytest.skip(
+            f"raw.file_inventory has {existing_rows} rows; refusing to TRUNCATE "
+            "in a test against a populated local database. Run in CI or wipe "
+            "raw.* manually first if you need this assertion."
+        )
 
     sentinel_sha = "3" * 64
     try:

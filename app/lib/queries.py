@@ -245,6 +245,36 @@ def daily_context() -> pd.DataFrame:
     )
 
 
+@st.cache_data(ttl=300)
+def forecast_bands() -> pd.DataFrame:
+    """Tall-format forecast bands for the recovery signals.
+
+    One row per (metric, day) covering both history and the next 7
+    forecast days. Pivot on metric in the page. See `mart_forecast_bands`
+    docs for the band-derivation math.
+    """
+    return pd.read_sql(
+        "SELECT metric, day, value, smoothed, forecast, forecast_lower, "
+        "forecast_upper, is_forecast, horizon_day_offset "
+        "FROM analytics_marts.mart_forecast_bands ORDER BY metric, day",
+        _engine(),
+        parse_dates=["day"],
+    )
+
+
+@st.cache_data(ttl=300)
+def forecast_backtest() -> pd.DataFrame:
+    """Walk-forward backtest results — one row per (metric, cutoff, horizon)."""
+    return pd.read_sql(
+        "SELECT metric, cutoff_day, target_day, horizon_days, forecast, "
+        "actual, abs_error "
+        "FROM analytics_marts.mart_forecast_backtest "
+        "ORDER BY metric, cutoff_day, horizon_days",
+        _engine(),
+        parse_dates=["cutoff_day", "target_day"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # "Ask" page (app/pages/10_ask.py) — Claude-powered NL→SQL helpers.
 #
