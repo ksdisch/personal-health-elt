@@ -7,9 +7,10 @@ schedule, how to fire a manual run, and the known tradeoff.
 ## Why self-hosted (and not GitHub Actions / launchd)
 
 The deciding factor is **data locality**: the source Apple Health CSVs live on
-this machine (Health Auto Export drops them into `data/raw/`). A self-hosted
-Prefect worker runs where the files already are, so there is zero data-egress
-step and no health data committed to the repo or lifted into object storage.
+this machine (the drop folder — see "Automating the export" below). A
+self-hosted Prefect worker runs where the files already are, so there is zero
+data-egress step for the pipeline and no health data committed to the repo or
+lifted into object storage.
 
 Prefect (over a raw `cron`/launchd shell job) buys a real schedule **plus**
 retries and run observability — not a fire-and-forget script.
@@ -31,8 +32,9 @@ decoupling "deploy" from "execute" for no benefit on one laptop-bound flow.
 
 `weekly_load` is the **whole** refresh, end-to-end — not just extract+load:
 
-1. **Load** — walk `data/raw/` and dispatch every new Health Auto Export CSV
-   through the batch loaders (quantities, categories, workouts).
+1. **Load** — walk the drop folder (`HEALTH_EXPORT_PATH`, default `data/raw/`)
+   and dispatch every new CSV through the batch loaders (quantities,
+   categories, workouts).
 2. **Enrich** — backfill trailing weather + calendar density (both non-fatal:
    a bad API key or outage logs a warning and never blocks the build).
 3. **Transform** — run `dbt build` against the **real** Postgres (your
@@ -63,9 +65,55 @@ duplicate rows.
 Defined once as `_SCHEDULE_CRON` / `_SCHEDULE_TZ` in
 `ingest/flows/weekly_load.py`. This rebuilds `mart_recovery_state` with an
 ~11.5h buffer before its Sunday-evening consumers — the `weekly-health-review`
-skill (5:30 PM CT) and `weekly-workout-planner` (6:00 PM CT). It assumes Health
-Auto Export drops the week's CSVs overnight; if you export manually on Sunday
+skill (5:30 PM CT) and `weekly-workout-planner` (6:00 PM CT). It assumes the
+week's CSVs have synced in overnight; if you run the export manually on Sunday
 morning, move the hour later.
+
+## Automating the export (where the CSVs come from)
+
+The source CSVs are produced on the iPhone by the **Simple Health Export CSV**
+app (filenames look like `..._SimpleHealthExportCSV.csv`). The loaders are coded
+to that app's exact schema: a leading `sep=,` Excel hint, then columns
+`type, sourceName, sourceVersion, productType, device, startDate, endDate,
+unit, value`. A *different* exporter (e.g. Health Auto Export) produces a
+different CSV layout and would need a new loader — see the BACKLOG before
+switching apps.
+
+That app is **manual / on-demand only** — it exports through the iOS share
+sheet and has no built-in scheduler. So the export *tap* cannot be fully
+automated; what we automate is everything after it:
+
+1. **On the phone** — open Simple Health Export CSV, export (All / the metrics
+   you want), and in the share sheet choose **Save to Files → iCloud Drive →
+   `HealthExports`**. (One-time: create that folder the first time.) ~20s,
+   ideally each Sunday morning before the 06:00 run, or any cadence — a missed
+   week self-heals via idempotency.
+2. **On the Mac** — iCloud Drive syncs that folder down automatically. The
+   pipeline reads it directly via `HEALTH_EXPORT_PATH` in `.env`:
+   ```bash
+   HEALTH_EXPORT_PATH="/Users/<you>/Library/Mobile Documents/com~apple~CloudDocs/HealthExports"
+   ```
+   Already set on this machine. The Sunday `weekly_load` then walks that folder
+   (recursively, idempotent) and loads anything new.
+
+**Why `HEALTH_EXPORT_PATH` and not a symlink:** a `data/raw/icloud` symlink was
+tried and rejected — Python 3.12's `Path.rglob("*.csv")` does **not** follow a
+symlink encountered mid-walk, so the synced files were invisible to the loader.
+Pointing the env var at the iCloud folder makes it the real walk root, which
+`rglob` handles correctly.
+
+**Tradeoff to know:** this routes health CSVs through *your* iCloud Drive (your
+personal cloud, same trust boundary as iCloud Health sync) rather than keeping
+them strictly on-disk. It does not affect the pipeline's "no egress / nothing in
+the repo" property — compute stays local and `data/raw/*` is gitignored. If you
+prefer zero cloud, drop exports straight into `./data/raw` over USB/AirDrop and
+unset `HEALTH_EXPORT_PATH`.
+
+**Historical data:** your existing April export lives in `./data/raw/export_full`
+and is already loaded in Postgres, so it's untouched by this switch. Only *new*
+exports flow through iCloud. If you ever rebuild the DB from scratch, either
+also copy `export_full` into the iCloud folder or temporarily unset
+`HEALTH_EXPORT_PATH` to reload from `./data/raw`.
 
 ## Prerequisites
 
@@ -77,6 +125,8 @@ The `serve` process needs the same environment a manual `dbt build` does:
 - The `POSTGRES_*` env vars (and any `OPENWEATHER_*` / `CALENDAR_ICS_URL` /
   `PUSHOVER_*` you use) are exported in the shell that launches `serve`.
 - Docker Postgres is up (`docker compose up -d`).
+- `HEALTH_EXPORT_PATH` resolves to the synced export folder (see "Automating
+  the export"); unset, it falls back to `./data/raw`.
 
 ## Start the scheduler
 

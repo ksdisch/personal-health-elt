@@ -6,7 +6,9 @@ alone.
 
 ## What this project is
 
-A personal Apple Health ELT pipeline. Health Auto Export writes CSVs; Python
+A personal Apple Health ELT pipeline. The **Simple Health Export CSV** iOS app
+writes CSVs (the loaders are coded to its schema — `sep=,` hint line + columns
+`type, sourceName, productType, startDate, endDate, unit, value`); Python
 loaders land them in Postgres `raw`; dbt transforms them into marts; Streamlit
 visualizes them. The mart `mart_recovery_state` is consumed by an external
 Claude skill called `weekly-health-review`, which in turn feeds
@@ -35,7 +37,9 @@ so code quality, README polish, and dbt conventions are part of the product.
 - `app/` — Streamlit app. `home.py` + numbered pages under `pages/`.
 - `tests/` — pytest unit tests (separate from dbt tests, which live under
   `transform/tests/`).
-- `data/raw/` — Health Auto Export drop folder. Gitignored.
+- `data/raw/` — export drop folder (overridable via `HEALTH_EXPORT_PATH`;
+  in practice pointed at an iCloud Drive folder so the iOS export syncs in —
+  see `docs/automation.md`). Gitignored.
 - `.github/workflows/ci.yml` — ruff + pytest + dbt parse.
 
 ## Non-negotiable conventions
