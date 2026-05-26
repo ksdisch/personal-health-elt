@@ -132,7 +132,7 @@ Resting HR, HRV, VO₂ Max, and Weight tabs with a shared 3-card-and-trend layou
                                        └──────────────────────────┘  rules to next plan
 ```
 
-Prefect schedules `weekly_load` on Sunday 11 AM CT to refresh raw + dbt.
+Prefect schedules `weekly_load` on Sunday 06:00 CT to refresh raw + dbt.
 
 ## Stack
 
@@ -154,7 +154,7 @@ Prefect schedules `weekly_load` on Sunday 11 AM CT to refresh raw + dbt.
 
 **Week 3 — Workouts + Integration.** ✅ Workouts loader (unit-embedded value parser), `int_workout_hr_samples` (range-joined, zone-tagged), `mart_workout_zones`, `mart_training_load` (TRIMP + ACWR), `mart_recovery_state` (public API).
 
-**Week 4 — Automation + Skill Integration.** ✅ Prefect scheduled flow (Sunday 11 AM CT). `weekly-health-review` Claude skill reads `mart_recovery_state`, writes a vault briefing. `weekly-workout-planner` skill reads the briefing and adjusts its plan (deload on injury-risk ACWR, rebuild volume on under-training, sacred Mon Yoga / Sun Rest preserved).
+**Week 4 — Automation + Skill Integration.** ✅ Prefect scheduled flow (Sunday 06:00 CT). `weekly-health-review` Claude skill reads `mart_recovery_state`, writes a vault briefing. `weekly-workout-planner` skill reads the briefing and adjusts its plan (deload on injury-risk ACWR, rebuild volume on under-training, sacred Mon Yoga / Sun Rest preserved).
 
 **What's deferred.** `categories` loader (sleep stages, mindfulness sessions). Rich derived marts on dietary metrics. Prefect scheduler running under launchd for survive-sleep durability. dbt source freshness checks.
 
@@ -212,22 +212,25 @@ pre-commit run --all-files          # pre-commit hooks (fast)
 pre-commit run --hook-stage pre-push --all-files
 ```
 
-## Scheduled refresh (optional)
+## Scheduled refresh
 
-The Prefect flow `ingest.flows.weekly_load` walks `data/raw/`, loads any
-new HK CSVs through the batch dispatcher, and triggers `dbt build` if rows
-landed. It's idempotent — re-running on a clean folder is a no-op.
+The Prefect flow `ingest.flows.weekly_load` is the full weekly refresh: it
+walks `data/raw/`, loads any new HK CSVs through the batch dispatcher, backfills
+weather + calendar, runs `dbt build` against the real schema, and evaluates
+notification rules. It's idempotent — re-running on a clean folder is a no-op.
 
 ```bash
 # Run once:
 uv run python -m ingest.flows.weekly_load
 
-# Long-lived scheduler (Sunday 11 AM CT):
+# Self-hosted scheduler — creates the deployment + runs the cron (Sunday 06:00 CT):
 uv run python -m ingest.flows.weekly_load --serve
 ```
 
-`--serve` registers a cron schedule and stays running. Pair it with `caffeinate`
-or a launchd plist if you want it to survive sleep.
+`--serve` runs a self-hosted Prefect deployment (`flow.serve()`) that stays
+alive and fires weekly. Pair it with `caffeinate` or a launchd plist to survive
+sleep. Full setup, schedule rationale, manual-run, and the laptop-bound
+tradeoff are in [docs/automation.md](docs/automation.md).
 
 ## Generate the weekly briefing
 
