@@ -19,14 +19,24 @@ Cloud-native is deferred, not abandoned. The flow code is portable: once the
 source CSVs are cloud-resident, the same `weekly_load` can be `prefect deploy`'d
 to a process work pool or Prefect Cloud with no flow-code changes.
 
-## Mechanism: `flow.serve()`
+## Mechanism: persistent server + `flow.serve()` runner
 
-We use `flow.serve()` (Prefect 3.x), not a separate server + work pool +
-worker. For a single personal flow, `serve()` is one long-lived foreground
-process that *both* registers the `weekly-health-load` deployment (with its
-cron) *and* executes its scheduled runs in-process. A work-pool/worker setup
-would add a Prefect server, a work pool, and a separate worker process —
-decoupling "deploy" from "execute" for no benefit on one laptop-bound flow.
+Two cooperating pieces (we skip the heavier work-pool + worker model, which
+adds a third moving part for no benefit on one laptop-bound flow):
+
+1. **A persistent Prefect server** (`prefect server start`) — runs the
+   **scheduler service** that turns the cron into actual flow runs, and serves
+   the UI at <http://127.0.0.1:4200>. Backed by `~/.prefect/prefect.db`.
+2. **A `flow.serve()` runner** — registers the `weekly-health-load` deployment
+   (with its cron) and **executes** the scheduled runs the server hands it.
+   Pointed at the server via `PREFECT_API_URL`.
+
+> **Why the server is not optional.** `serve()` on its own spins up an
+> *ephemeral* (temporary) server, which logs `Cannot schedule flows on an
+> ephemeral server` and **never fires the cron** — the deployment is registered
+> but no runs are created. A persistent server (its scheduler service) is
+> required for the schedule to actually run. The two LaunchAgents below wire
+> exactly this; see "Run it under launchd".
 
 ## What the flow does each run
 
@@ -135,22 +145,70 @@ The `serve` process needs the same environment a manual `dbt build` does:
 - `HEALTH_EXPORT_PATH` resolves to the synced export folder (see "Automating
   the export"); unset, it falls back to `./data/raw`.
 
-## Start the scheduler
+## Run it under launchd (survives reboot / login / crash)
+
+Two LaunchAgents — the persistent server and the serve runner — keep the whole
+thing alive without a babysat Terminal. Reference templates live in
+`deploy/launchd/`; install them with this recipe (substitutes your real paths
+and loads both):
 
 ```bash
-# Long-lived foreground process: creates the deployment AND runs the schedule.
-uv run python -m ingest.flows.weekly_load --serve
+UV_BIN="$(command -v uv)"; UV_DIR="$(dirname "$UV_BIN")"; ROOT="$(pwd)"
+for name in com.kyle.prefect-server com.kyle.health-weekly-load; do
+  sed -e "s|__UV_BIN__|$UV_BIN|g" -e "s|__UV_DIR__|$UV_DIR|g" \
+      -e "s|__PROJECT_ROOT__|$ROOT|g" \
+      "deploy/launchd/$name.plist.template" > "$HOME/Library/LaunchAgents/$name.plist"
+  plutil -lint "$HOME/Library/LaunchAgents/$name.plist"
+done
+# Start the server first (RunAtLoad), wait for its API, then the runner.
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.kyle.prefect-server.plist"
+until curl -fs http://127.0.0.1:4200/api/health >/dev/null; do sleep 2; done
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.kyle.health-weekly-load.plist"
 ```
 
-Leave it running. To survive display sleep on macOS, wrap it:
+`RunAtLoad` + `KeepAlive` mean both restart at login, after a crash, and on
+reboot (sleep only suspends them — it doesn't kill them). Logs go to
+`/tmp/prefect-server.{out,err}.log` and `/tmp/health-weekly-load.{out,err}.log`.
+
+**Status / stop:**
 
 ```bash
-caffeinate -is uv run python -m ingest.flows.weekly_load --serve
+launchctl print gui/$(id -u)/com.kyle.health-weekly-load | grep -E 'state|pid'
+launchctl kickstart -k gui/$(id -u)/com.kyle.health-weekly-load   # force restart
+launchctl bootout  gui/$(id -u)/com.kyle.health-weekly-load        # stop (repeat for the server)
 ```
 
-For survive-reboot durability, run the same command under a launchd
-`LaunchAgent` (`~/Library/LaunchAgents/`) with `KeepAlive=true` and the working
-directory set to the repo root. Press `Ctrl-C` to stop the foreground process.
+**Verify the schedule is live** (not just registered):
+
+```bash
+export PREFECT_API_URL=http://127.0.0.1:4200/api
+uv run prefect deployment inspect 'weekly-health-load/weekly-health-load' | grep -E 'paused|cron|active'
+uv run prefect flow-run ls --state Scheduled --limit 5   # should list upcoming Sundays
+```
+
+If `flow-run ls --state Scheduled` is empty, the server (scheduler) isn't
+running — check `com.kyle.prefect-server` and `/tmp/prefect-server.err.log`.
+
+### Manual / ad-hoc (no launchd)
+
+For a one-off foreground scheduler, just run it (no server needed if you only
+want to fire it yourself, not on a cron):
+
+```bash
+uv run python -m ingest.flows.weekly_load --serve   # Ctrl-C to stop
+```
+
+### Sleep at 06:00 Sunday
+
+The agents survive sleep but a suspended Mac won't *fire* the cron at exactly
+06:00. A missed week self-heals (idempotent load; weather/calendar back-fill 14
+/ 60 days). To guarantee the run, schedule a wake just before it:
+
+```bash
+sudo pmset repeat wakeorpoweron Sun 05:55:00
+```
+
+Otherwise just have the Mac awake (lid open / on power) Sunday morning.
 
 ## Trigger a manual run
 

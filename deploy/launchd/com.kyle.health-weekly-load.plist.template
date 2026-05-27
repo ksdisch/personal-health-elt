@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Reference template — install with the recipe in docs/automation.md, which
+  substitutes the __PLACEHOLDERS__ for this machine's real paths and writes the
+  result to ~/Library/LaunchAgents/com.kyle.health-weekly-load.plist.
+
+  The serve() runner: registers the weekly-health-load deployment and executes
+  its scheduled runs. PREFECT_API_URL points it at the persistent server
+  (com.kyle.prefect-server) so that server's scheduler materializes the cron;
+  without it the runner starts an ephemeral server that cannot schedule.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kyle.health-weekly-load</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__UV_BIN__</string>
+        <string>run</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>ingest.flows.weekly_load</string>
+        <string>--serve</string>
+    </array>
+
+    <!-- cwd = repo root so `uv run` finds the project venv and
+         ingest.config's load_dotenv() picks up ./.env -->
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts with a minimal PATH; run_dbt_build shells out to
+             `uv run dbt`, so uv's dir must be on PATH. -->
+        <key>PATH</key>
+        <string>__UV_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PREFECT_API_URL</key>
+        <string>http://127.0.0.1:4200/api</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/health-weekly-load.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/health-weekly-load.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
