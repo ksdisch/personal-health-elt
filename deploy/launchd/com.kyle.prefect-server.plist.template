@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Reference template — install with the recipe in docs/automation.md, which
+  substitutes the __PLACEHOLDERS__ for this machine's real paths and writes the
+  result to ~/Library/LaunchAgents/com.kyle.prefect-server.plist.
+
+  Persistent Prefect server. Required because flow.serve() against an
+  ephemeral/temporary server CANNOT run the scheduler — without this agent the
+  weekly cron is registered but never fires. Also serves the UI at
+  http://127.0.0.1:4200. Backed by ~/.prefect/prefect.db (deployments + run
+  history persist across restarts).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kyle.prefect-server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__UV_BIN__</string>
+        <string>run</string>
+        <string>prefect</string>
+        <string>server</string>
+        <string>start</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>4200</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__UV_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/prefect-server.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/prefect-server.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

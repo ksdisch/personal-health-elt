@@ -48,6 +48,16 @@ _CALENDAR_LOOKBACK_DAYS = 60
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+# Weekly refresh schedule for the self-hosted Prefect deployment (see
+# docs/automation.md). Sunday 06:00 America/Chicago rebuilds
+# mart_recovery_state with an ~11.5h buffer before its Sunday-evening
+# consumers: the weekly-health-review skill (5:30 PM CT) and
+# weekly-workout-planner (6:00 PM CT). Assumes Health Auto Export drops the
+# week's CSVs into data/raw overnight. Constants are the single source of
+# truth shared by _serve() and the docs so they can't drift.
+_SCHEDULE_CRON = "0 6 * * 0"
+_SCHEDULE_TZ = "America/Chicago"
+
 
 def _logger() -> logging.Logger:
     """Prefect run logger when inside a flow/task context, else stdlib.
@@ -167,7 +177,13 @@ def run_dbt_build() -> int:
     return proc.returncode
 
 
-@flow(name="weekly-health-load")
+# Flow-level retry is a coarse safety net on top of the per-task retries
+# below: if a task exhausts its own retries and fails terminally (e.g. a
+# Postgres outage that outlasts the 30–60s task delays), the whole flow
+# re-runs once after 2 minutes. Safe to re-run wholesale because every
+# loader is idempotent (file ledger + ON CONFLICT) and dbt build is
+# rerunnable — a retry of an already-loaded folder is a cheap no-op.
+@flow(name="weekly-health-load", retries=1, retry_delay_seconds=120)
 def weekly_load() -> dict[str, int | None]:
     """End-to-end weekly refresh: load CSVs → dbt build → return summary."""
     log = _logger()
@@ -201,6 +217,7 @@ def weekly_load() -> dict[str, int | None]:
         )
 
     summary: dict[str, int | None] = {
+        "zips_extracted": len(result.zips_extracted),
         "files_loaded": result.files_loaded,
         "files_already_seen": result.files_already_loaded,
         "files_skipped": len(result.skipped),
@@ -274,18 +291,32 @@ def weekly_load() -> dict[str, int | None]:
 
 
 def _serve() -> None:
-    """Register a cron schedule and keep the process alive (Prefect 3.x serve).
+    """Create the weekly deployment and keep it running (Prefect 3.x serve).
 
-    Cadence: Sunday 11 AM CT — gives Kyle time to export from the iOS app
-    in the morning, runs before the weekly-health-review (5:30 PM, planned)
-    and weekly-workout-planner (6:00 PM).
+    This is a single long-lived foreground process that BOTH registers the
+    "weekly-health-load" deployment (with the cron below) AND executes its
+    scheduled runs in-process — no separate Prefect server, work pool, or
+    worker required. It runs where the Apple Health CSVs already live, so
+    there is no data-egress step. Cadence is Sunday 06:00 CT (see
+    _SCHEDULE_CRON): ahead of the Sunday-evening consumers of
+    mart_recovery_state (weekly-health-review at 5:30 PM, weekly-workout-planner
+    at 6:00 PM).
 
-    Press Ctrl-C to stop.
+    Known tradeoff: the laptop must be awake at the scheduled time. Pair with
+    `caffeinate` or a launchd plist for sleep durability. See
+    docs/automation.md. Press Ctrl-C to stop.
     """
+    log = _logger()
+    log.info(
+        "Serving 'weekly-health-load' deployment (schedule='%s', tz='%s'). "
+        "Process must stay alive for runs to fire.",
+        _SCHEDULE_CRON,
+        _SCHEDULE_TZ,
+    )
     weekly_load.serve(
         name="weekly-health-load",
-        schedules=[Cron("0 11 * * 0", timezone="America/Chicago")],
-        description="Load new HK CSVs from data/raw and run dbt build.",
+        schedules=[Cron(_SCHEDULE_CRON, timezone=_SCHEDULE_TZ)],
+        description="Load new HK CSVs from data/raw, run dbt build, evaluate notifications.",
         tags=["health", "weekly"],
     )
 
@@ -295,7 +326,7 @@ def main() -> None:
     parser.add_argument(
         "--serve",
         action="store_true",
-        help="Register the Sunday 11am CT cron and stay alive (long-running).",
+        help="Create the weekly deployment (Sunday 06:00 CT cron) and stay alive (long-running).",
     )
     args = parser.parse_args()
 

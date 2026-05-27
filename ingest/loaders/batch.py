@@ -13,6 +13,7 @@ surfaced in the BatchResult for the caller to decide what to do.
 from __future__ import annotations
 
 import logging
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,12 +64,49 @@ def metric_type_from_path(path: Path) -> str:
     return "unknown"
 
 
+def extract_new_zips(folder: Path) -> list[Path]:
+    """Expand any `*.zip` in the drop folder so its CSVs become visible to the
+    recursive CSV walk.
+
+    The Simple Health Export CSV app always delivers a full export as a single
+    `.zip`; the recursive `*.csv` walk in `load_folder` never looks inside an
+    archive, so without this step a freshly-dropped export loads nothing. Each
+    zip is expanded into a sibling directory named after the archive stem
+    (`HealthAll_….zip` → `HealthAll_…/`).
+
+    Idempotent and non-fatal, matching the loader contract:
+    - Skips any zip whose target directory already exists, so re-runs (and the
+      weekly flow re-seeing last week's archive) don't re-extract. Even if a
+      CSV were re-extracted, the file-ledger SHA + ON CONFLICT dedup makes the
+      reload a no-op.
+    - A corrupt or not-yet-downloaded (iCloud-dataless) archive is logged and
+      skipped, never aborting the batch.
+
+    Returns the list of directories newly extracted (for logging / tests).
+    """
+    extracted: list[Path] = []
+    for zip_path in sorted(folder.rglob("*.zip")):
+        target = zip_path.with_suffix("")  # strip the trailing `.zip`
+        if target.exists():
+            continue
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(target)
+        except (zipfile.BadZipFile, OSError) as exc:
+            logger.warning("skip unreadable zip %s: %s", zip_path.name, exc)
+            continue
+        logger.info("extracted %s -> %s/", zip_path.name, target.name)
+        extracted.append(target)
+    return extracted
+
+
 @dataclass
 class BatchResult:
     folder: Path
     loaded: list[LoadResult] = field(default_factory=list)
     skipped: list[Path] = field(default_factory=list)
     errors: list[tuple[Path, Exception]] = field(default_factory=list)
+    zips_extracted: list[Path] = field(default_factory=list)
 
     @property
     def files_loaded(self) -> int:
@@ -192,6 +230,10 @@ def load_folder(
     engine = engine or get_engine()
     result = BatchResult(folder=folder)
 
+    # Expand any dropped zip archives first so the CSV walk below can see
+    # their contents. No-op when there are no new zips.
+    result.zips_extracted = extract_new_zips(folder)
+
     loaders = {
         "quantities": quantities_loader,
         "workouts": workouts_loader,
@@ -226,6 +268,7 @@ def _main() -> None:
 
     print("\n─── batch summary ───")
     print(f"folder:             {result.folder}")
+    print(f"zips extracted:     {len(result.zips_extracted)}")
     print(f"files loaded:       {result.files_loaded}")
     print(f"files already seen: {result.files_already_loaded}")
     print(f"files skipped:      {len(result.skipped)}")
