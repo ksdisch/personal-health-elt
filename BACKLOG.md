@@ -11,6 +11,12 @@ Pick items with the `project-backlog` skill in Claude Code.
 
 ## Open
 
+### [Bug] OpenWeather loader returns HTTP 401 — weather enrichment silently empty
+- **Why:** During the 2026-05-27 automation work, every `weekly_load` run logs `weather backfill failed; continuing without it` with `urllib.error.HTTPError: HTTP Error 401: Unauthorized` from `weather_openweather.py` (`_fetch_day` → One Call 3.0 `day_summary`). The flow's non-fatal design catches it (`weather_skipped=1`), so the pipeline completes and dbt builds fine — but `mart_daily_context`'s weather columns stay NULL indefinitely, so any "recovery vs. weather" analysis is dead. 401 means the configured `OPENWEATHER_API_KEY` isn't authorized for the **One Call 3.0** endpoint specifically (it requires a separate "One Call by Call" subscription — distinct from the standard free-tier weather API — and a newly-created key can take a few hours to activate).
+- **Acceptance:** Root-cause the 401 (verify the key is subscribed to One Call 3.0 at openweathermap.org → API keys, or swap to a key that is). After fixing, a `weekly_load` run shows `weather_skipped=0` with `weather_days_fetched>0`, and `SELECT count(*) FROM analytics_marts.mart_daily_context WHERE temp_max_c IS NOT NULL` is non-zero. Consider a clearer one-line WARNING that names "401 → check One Call 3.0 subscription" so a future operator isn't left guessing. No code change strictly required if it's purely a key/subscription issue.
+- **Size:** S
+- **Added:** 2026-05-27
+
 ### [Improvement] Extend mypy coverage to `app/`
 - **Why:** The CI-hardening ship (2026-05-12) enabled mypy on `ingest/` but skipped `app/`. Reason: `app/pages/07_readiness.py:157` alone produces ~30 errors from a single `mark_text(**dict[str, object])` Altair kwarg spread, plus another ~30 at line 162. The signal-to-noise ratio for typing Streamlit + Altair page code is low — most errors are inherent to Altair's loosely-typed kwargs API, not real bugs. Worth revisiting once the page code stabilizes or Altair publishes better stubs.
 - **Acceptance:** `uv run mypy app` passes cleanly. Likely requires: typing the Altair kwarg dicts at call sites (or using `cast(Any, ...)`), fixing the `Returning Any from function declared to return "Chart"` issues in `06_anomaly.py`, narrowing the `dict.get` arg type in `home.py`. CI's `Mypy (ingest)` step extended to `Mypy (ingest + app)`.
