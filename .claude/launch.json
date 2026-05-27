@@ -1,0 +1,45 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Streamlit (health dashboard)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "streamlit",
+        "run",
+        "app/home.py",
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
+      "port": 8501
+    },
+    {
+      "name": "Docker Compose (Postgres 5432 + pgAdmin 5050)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up"],
+      "port": 5432
+    },
+    {
+      "name": "dbt docs",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "dbt",
+        "docs",
+        "serve",
+        "--project-dir",
+        "transform",
+        "--profiles-dir",
+        "transform",
+        "--port",
+        "8080"
+      ],
+      "port": 8080
+    }
+  ]
+}
