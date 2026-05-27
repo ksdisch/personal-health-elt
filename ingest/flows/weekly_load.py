@@ -217,6 +217,7 @@ def weekly_load() -> dict[str, int | None]:
         )
 
     summary: dict[str, int | None] = {
+        "zips_extracted": len(result.zips_extracted),
         "files_loaded": result.files_loaded,
         "files_already_seen": result.files_already_loaded,
         "files_skipped": len(result.skipped),

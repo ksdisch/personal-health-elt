@@ -87,7 +87,8 @@ automated; what we automate is everything after it:
    you want), and in the share sheet choose **Save to Files → iCloud Drive →
    `HealthExports`**. (One-time: create that folder the first time.) ~20s,
    ideally each Sunday morning before the 06:00 run, or any cadence — a missed
-   week self-heals via idempotency.
+   week self-heals via idempotency. An "Export All" arrives as a single `.zip`;
+   leave it as-is — see step 3.
 2. **On the Mac** — iCloud Drive syncs that folder down automatically. The
    pipeline reads it directly via `HEALTH_EXPORT_PATH` in `.env`:
    ```bash
@@ -95,6 +96,12 @@ automated; what we automate is everything after it:
    ```
    Already set on this machine. The Sunday `weekly_load` then walks that folder
    (recursively, idempotent) and loads anything new.
+3. **Zips are auto-extracted** — the batch loader's `extract_new_zips` expands
+   any `*.zip` in the drop folder into a sibling dir (named after the archive
+   stem) before walking for CSVs, since the recursive `*.csv` walk never looks
+   inside an archive. It's idempotent (skips a zip already extracted) and
+   non-fatal (a corrupt / not-yet-downloaded archive is logged and skipped). So
+   you never unzip by hand — dropping the `.zip` is enough.
 
 **Why `HEALTH_EXPORT_PATH` and not a symlink:** a `data/raw/icloud` symlink was
 tried and rejected — Python 3.12's `Path.rglob("*.csv")` does **not** follow a

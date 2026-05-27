@@ -1,5 +1,6 @@
 """Unit tests for the batch loader — DB-free via loader injection."""
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -7,10 +8,18 @@ import pytest
 from ingest.loaders.batch import (
     BatchResult,
     dispatch,
+    extract_new_zips,
     load_folder,
     metric_type_from_path,
 )
 from ingest.loaders.quantities import LoadResult
+
+
+def _make_zip(zip_path: Path, members: dict[str, str]) -> None:
+    """Write a zip at `zip_path` containing `{member_name: text}` entries."""
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for name, text in members.items():
+            zf.writestr(name, text)
 
 
 def test_dispatch_recognizes_quantity_prefix(tmp_path: Path) -> None:
@@ -29,6 +38,63 @@ def test_dispatch_returns_none_for_unknown(tmp_path: Path) -> None:
 def test_load_folder_raises_on_missing_dir(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_folder(tmp_path / "does-not-exist")
+
+
+# ---- zip auto-extraction ---------------------------------------------------
+
+
+def test_extract_new_zips_expands_archive(tmp_path: Path) -> None:
+    """A dropped zip is expanded into a sibling dir named after its stem,
+    making the CSVs inside reachable by the recursive walk."""
+    _make_zip(
+        tmp_path / "HealthAll_2099_SimpleHealthExportCSV.zip",
+        {"HKQuantityTypeIdentifierHeartRate_x.csv": "hdr\n"},
+    )
+    extracted = extract_new_zips(tmp_path)
+
+    target = tmp_path / "HealthAll_2099_SimpleHealthExportCSV"
+    assert extracted == [target]
+    assert (target / "HKQuantityTypeIdentifierHeartRate_x.csv").is_file()
+
+
+def test_extract_new_zips_is_idempotent(tmp_path: Path) -> None:
+    """Re-running over an already-extracted zip is a no-op (target exists),
+    so the weekly flow re-seeing last week's archive doesn't re-extract."""
+    _make_zip(tmp_path / "export.zip", {"HKQuantityTypeIdentifierA_x.csv": "hdr\n"})
+    assert len(extract_new_zips(tmp_path)) == 1
+    assert extract_new_zips(tmp_path) == []  # second pass: nothing new
+
+
+def test_extract_new_zips_skips_corrupt_archive(tmp_path: Path) -> None:
+    """A corrupt / not-yet-downloaded zip is logged and skipped, never
+    raising — the batch must survive a bad archive."""
+    (tmp_path / "broken.zip").write_text("this is not a zip")
+    assert extract_new_zips(tmp_path) == []
+    assert not (tmp_path / "broken").exists()
+
+
+def test_load_folder_auto_extracts_zip_then_dispatches(tmp_path: Path) -> None:
+    """End-to-end: a zip-only drop folder still loads, because load_folder
+    expands archives before walking for CSVs."""
+    _make_zip(
+        tmp_path / "HealthAll_2099_SimpleHealthExportCSV.zip",
+        {
+            "HKQuantityTypeIdentifierHeartRate_a.csv": "hdr\n",
+            "HKCategoryTypeIdentifierSleep_b.csv": "hdr\n",
+        },
+    )
+    q_calls: list[Path] = []
+    c_calls: list[Path] = []
+    result = load_folder(
+        tmp_path,
+        quantities_loader=_fake_ok_loader(q_calls),
+        categories_loader=_fake_ok_loader(c_calls),
+    )
+
+    assert len(result.zips_extracted) == 1
+    assert {p.name for p in q_calls} == {"HKQuantityTypeIdentifierHeartRate_a.csv"}
+    assert {p.name for p in c_calls} == {"HKCategoryTypeIdentifierSleep_b.csv"}
+    assert len(result.loaded) == 2
 
 
 def _fake_ok_loader(calls: list[Path]):
