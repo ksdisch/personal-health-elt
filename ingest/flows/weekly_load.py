@@ -35,8 +35,17 @@ from ingest.loaders.calendar_google import CalendarLoadResult, load_calendar_dai
 from ingest.loaders.weather_openweather import WeatherLoadResult, load_weather_daily
 from ingest.notifications.notify import NotifyResult, notify_on_state_change
 
-# Optional Firestore feed for the Tempo PWA. The import is lazy below so the
-# flow runs cleanly on machines that haven't installed firebase-admin yet.
+# Optional Firestore feed for the Tempo PWA. The script module is import-safe
+# (firebase-admin is lazy-imported inside its `_firestore_client()`), so a
+# top-level import here doesn't force the dep on machines that haven't
+# installed it yet. The function-level call still no-ops with a structured
+# skip when the SA env vars are unset.
+from scripts.push_recovery_state import (  # noqa: E402
+    PushResult,
+)
+from scripts.push_recovery_state import (
+    push as _push_recovery_state,
+)
 
 # How far back to backfill weather on every flow run. Weather data is
 # small and immutable for past dates; a 14-day window cheaply re-covers
@@ -127,18 +136,20 @@ _STDERR_TAIL_LINES = 20
 
 
 @task(retries=1, retry_delay_seconds=30)
-def push_recovery_state_to_tempo():
+def push_recovery_state_to_tempo() -> PushResult:
     """Push mart_recovery_state to Firestore for the Tempo PWA.
 
     Non-fatal: caller wraps in try/except so a Firebase outage or a missing
     service-account credential never blocks the rest of the flow. The push
     helper itself returns a structured skip result when env vars aren't set
     (so a portfolio clone without Tempo enrollment is a quiet no-op).
-    """
-    # Lazy import: keeps `firebase-admin` an optional dep at flow-import time.
-    from scripts.push_recovery_state import push as _push
 
-    return _push()
+    Explicit return annotation matters: Prefect's `@task` decorator types the
+    return of an unannotated function as `Coroutine[Any, Any, Any]`, which
+    poisons every downstream attribute access. Annotated tasks like the
+    weather/calendar pair above stay typed as their real result class.
+    """
+    return _push_recovery_state()
 
 
 @task(retries=1, retry_delay_seconds=30)
