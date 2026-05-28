@@ -70,10 +70,15 @@ Materializations by layer (defaults in `dbt_project.yml`):
 - marts: table
 
 ### `mart_recovery_state` is a public API
-The `weekly-health-review` Claude skill consumes this mart. Schema changes
-(renaming a column, dropping a field, changing a unit) require updating that
-skill in lockstep. Treat the mart like a versioned interface — never break it
-silently.
+This mart now has **two downstream consumers**: the `weekly-health-review`
+Claude skill (Markdown briefing path) and the Tempo PWA's Rhythm view
+(Firestore feed path via `scripts/push_recovery_state.py` →
+`users/{uid}/recovery_state/{latest,history}`). Schema changes (renaming a
+column, dropping a field, changing a unit) require updating BOTH consumers
+in lockstep. Treat the mart like a versioned interface — never break it
+silently. The dbt `accepted_values` test on `recovery_signal` and the
+`unique(day)` test in `transform/models/marts/schema.yml` are the durable
+contract surface for both consumers.
 
 ### HR zones are config, not code
 Manual HR zones live in `transform/seeds/hr_zones.csv`. Zone 2 is locked to

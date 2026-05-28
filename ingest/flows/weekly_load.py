@@ -35,6 +35,18 @@ from ingest.loaders.calendar_google import CalendarLoadResult, load_calendar_dai
 from ingest.loaders.weather_openweather import WeatherLoadResult, load_weather_daily
 from ingest.notifications.notify import NotifyResult, notify_on_state_change
 
+# Optional Firestore feed for the Tempo PWA. The script module is import-safe
+# (firebase-admin is lazy-imported inside its `_firestore_client()`), so a
+# top-level import here doesn't force the dep on machines that haven't
+# installed it yet. The function-level call still no-ops with a structured
+# skip when the SA env vars are unset.
+from scripts.push_recovery_state import (  # noqa: E402
+    PushResult,
+)
+from scripts.push_recovery_state import (
+    push as _push_recovery_state,
+)
+
 # How far back to backfill weather on every flow run. Weather data is
 # small and immutable for past dates; a 14-day window cheaply re-covers
 # any prior-run miss without thrashing the API.
@@ -121,6 +133,23 @@ class DbtBuildError(RuntimeError):
 
 
 _STDERR_TAIL_LINES = 20
+
+
+@task(retries=1, retry_delay_seconds=30)
+def push_recovery_state_to_tempo() -> PushResult:
+    """Push mart_recovery_state to Firestore for the Tempo PWA.
+
+    Non-fatal: caller wraps in try/except so a Firebase outage or a missing
+    service-account credential never blocks the rest of the flow. The push
+    helper itself returns a structured skip result when env vars aren't set
+    (so a portfolio clone without Tempo enrollment is a quiet no-op).
+
+    Explicit return annotation matters: Prefect's `@task` decorator types the
+    return of an unannotated function as `Coroutine[Any, Any, Any]`, which
+    poisons every downstream attribute access. Annotated tasks like the
+    weather/calendar pair above stay typed as their real result class.
+    """
+    return _push_recovery_state()
 
 
 @task(retries=1, retry_delay_seconds=30)
@@ -285,6 +314,21 @@ def weekly_load() -> dict[str, int | None]:
 
     if notify.errors:
         log.error("notify: %d transport error(s): %s", len(notify.errors), notify.errors)
+
+    # Tempo Firestore feed: runs last because it reads mart_recovery_state,
+    # which is only fresh after dbt build. Same non-fatal pattern as
+    # weather/calendar — a Firebase outage or missing credential is a quiet
+    # skip, not a flow failure.
+    try:
+        push_result = push_recovery_state_to_tempo()
+        summary["tempo_recovery_rows_pushed"] = push_result.rows_fetched
+        summary["tempo_recovery_skipped"] = int(push_result.skipped)
+        if push_result.skipped and push_result.skip_reason:
+            log.info("tempo recovery_state push skipped: %s", push_result.skip_reason)
+    except Exception:
+        log.exception("tempo recovery_state push failed; continuing")
+        summary["tempo_recovery_rows_pushed"] = 0
+        summary["tempo_recovery_skipped"] = 1
 
     log.info("weekly_load summary: %s", json.dumps(summary, default=str))
     return summary
