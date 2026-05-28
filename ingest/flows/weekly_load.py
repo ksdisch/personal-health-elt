@@ -35,6 +35,9 @@ from ingest.loaders.calendar_google import CalendarLoadResult, load_calendar_dai
 from ingest.loaders.weather_openweather import WeatherLoadResult, load_weather_daily
 from ingest.notifications.notify import NotifyResult, notify_on_state_change
 
+# Optional Firestore feed for the Tempo PWA. The import is lazy below so the
+# flow runs cleanly on machines that haven't installed firebase-admin yet.
+
 # How far back to backfill weather on every flow run. Weather data is
 # small and immutable for past dates; a 14-day window cheaply re-covers
 # any prior-run miss without thrashing the API.
@@ -121,6 +124,21 @@ class DbtBuildError(RuntimeError):
 
 
 _STDERR_TAIL_LINES = 20
+
+
+@task(retries=1, retry_delay_seconds=30)
+def push_recovery_state_to_tempo():
+    """Push mart_recovery_state to Firestore for the Tempo PWA.
+
+    Non-fatal: caller wraps in try/except so a Firebase outage or a missing
+    service-account credential never blocks the rest of the flow. The push
+    helper itself returns a structured skip result when env vars aren't set
+    (so a portfolio clone without Tempo enrollment is a quiet no-op).
+    """
+    # Lazy import: keeps `firebase-admin` an optional dep at flow-import time.
+    from scripts.push_recovery_state import push as _push
+
+    return _push()
 
 
 @task(retries=1, retry_delay_seconds=30)
@@ -285,6 +303,21 @@ def weekly_load() -> dict[str, int | None]:
 
     if notify.errors:
         log.error("notify: %d transport error(s): %s", len(notify.errors), notify.errors)
+
+    # Tempo Firestore feed: runs last because it reads mart_recovery_state,
+    # which is only fresh after dbt build. Same non-fatal pattern as
+    # weather/calendar — a Firebase outage or missing credential is a quiet
+    # skip, not a flow failure.
+    try:
+        push_result = push_recovery_state_to_tempo()
+        summary["tempo_recovery_rows_pushed"] = push_result.rows_fetched
+        summary["tempo_recovery_skipped"] = int(push_result.skipped)
+        if push_result.skipped and push_result.skip_reason:
+            log.info("tempo recovery_state push skipped: %s", push_result.skip_reason)
+    except Exception:
+        log.exception("tempo recovery_state push failed; continuing")
+        summary["tempo_recovery_rows_pushed"] = 0
+        summary["tempo_recovery_skipped"] = 1
 
     log.info("weekly_load summary: %s", json.dumps(summary, default=str))
     return summary
