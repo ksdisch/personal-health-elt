@@ -8,9 +8,11 @@
 A personal Apple Health ELT pipeline, end to end. CSV exports from a
 HealthKit-compatible iOS app land on disk, get loaded into Postgres,
 transformed with dbt into analytics-ready marts, and visualized in a
-Streamlit app. The final mart (`mart_recovery_state`) is a public API
-consumed by an external Claude skill called `weekly-health-review`,
-which feeds `weekly-workout-planner`.
+Streamlit app. The apex mart (`mart_recovery_state`) is a versioned
+public API with **three** downstream consumers — the `weekly-health-review`
+and `daily-workout-coach` Claude skills, and a one-way Firestore feed to
+the Tempo PWA. Its full contract lives in the
+[data dictionary](docs/reference/data-dictionary.md).
 
 This is also a **portfolio project for Analytics Engineer / Data
 Engineer roles**, so code quality, dbt conventions, and design choices
@@ -31,14 +33,15 @@ Fly / Railway), and the redeploy path._
 | **Idempotent ingestion** | SHA256 file ledger + ON CONFLICT row-level dedup, in one transaction. Re-running any loader is safe. |
 | **Range-based SQL** | `int_workout_hr_samples` joins HR samples to workout windows; LEAD() computes per-sample duration; materialized as table to amortize the cost. |
 | **dbt layering** | Strict `staging → intermediate → marts`. Marts never select from `source()`. Layer-level tests on every model. |
-| **Public-API contract** | `mart_recovery_state` schema is enforced via dbt `accepted_values` + `unique` tests. The downstream skill consumes it. |
+| **Public-API contract** | `mart_recovery_state` is a versioned interface with **three** consumers, enforced via dbt `accepted_values` + `unique` tests and documented in a [data dictionary](docs/reference/data-dictionary.md). |
 | **Multi-source dedup** | Apple Watch > iPhone > third-party — encoded as a `source_priority` window function in staging. |
 | **Time correctness** | UTC at rest, `America/Chicago` everywhere downstream. TZ conversion lives in exactly one layer. |
 | **Date-spine rolling windows** | `mart_training_load` generates a contiguous date series so 7-day / 28-day rolling averages denominate correctly through zero-load days. |
-| **Real Streamlit UX** | 4 pages including a Weekly Review with Altair-rendered ACWR chart on color-coded sweet-spot / injury-risk bands. |
-| **Closed-loop integration** | dbt mart → Python briefing generator → vault Markdown → consumer skill — all idempotent and recoverable. |
+| **Pure-SQL forecasting** | `holt_forecast` macro implements Holt's linear method (level + trend) with `WITH RECURSIVE` — `mart_forecast_bands` + a walk-forward `mart_forecast_backtest`, no Python ML dependency. |
+| **Real Streamlit UX** | 12 pages including a Weekly Review with an Altair-rendered ACWR chart on color-coded sweet-spot / injury-risk bands. |
+| **Closed-loop integration** | dbt mart → Python generators → vault Markdown / Firestore → three consumers — all idempotent and recoverable. |
 
-**Scale of real data flowing through right now:** 286,770 quantity samples across 35 metric types · 78 workouts · 30,859 HR samples joined to workout windows · 31 daily recovery-state rows · all loaded in ~10 seconds end-to-end.
+**Scale of real data flowing through right now:** 676,927 quantity samples across 35 metric types · 186 workouts · 72,331 HR samples range-joined to workout windows · 68 daily recovery-state rows · 61 scored sleep nights — all loaded idempotently and rebuilt end-to-end.
 
 ## Screenshots
 
@@ -62,77 +65,87 @@ Resting HR, HRV, VO₂ Max, and Weight tabs with a shared 3-card-and-trend layou
 
 ## Architecture
 
-```
-                              ┌───────────────────────┐
-                              │  HealthKit CSV export │
-                              │  (iOS → data/raw/)    │
-                              └──────────┬────────────┘
-                                         │
-                    ┌────────────────────┼────────────────────┐
-                    ▼                    ▼                    ▼
-           ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-           │   quantities    │  │    workouts     │  │   categories    │
-           │     loader      │  │     loader      │  │   (TODO Wk5)    │
-           └────────┬────────┘  └────────┬────────┘  └─────────────────┘
-                    │                    │              SHA256 file ledger
-                    └─────────┬──────────┘              + ON CONFLICT dedup
-                              ▼
-                    ┌─────────────────────┐
-                    │  Postgres 16 (raw)  │  raw.quantities, raw.workouts,
-                    └──────────┬──────────┘  raw.file_inventory
-                               │
-                               ▼  dbt (staging → intermediate → marts)
-                    ┌─────────────────────┐
-                    │ stg_quantities      │  TZ → America/Chicago,
-                    │ stg_workouts        │  source-priority dedup
-                    └──────────┬──────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │ int_workout_hr_     │  range-join, LEAD() durations,
-                    │   samples           │  zone lookup. (table-materialized)
-                    └──────────┬──────────┘
-                               │
-            ┌──────────────────┼──────────────────────┐
-            ▼                  ▼                      ▼
-   ┌────────────────┐  ┌────────────────┐    ┌────────────────┐
-   │ mart_daily_*   │  │ mart_workout_  │    │ mart_training_ │
-   │ (rhr/hrv/      │  │   zones        │    │  load (TRIMP   │
-   │  vo2max/wt)    │  │                │    │  + ACWR)       │
-   └────────┬───────┘  └────────┬───────┘    └────────┬───────┘
-            │                   │                     │
-            └───────────────────┼─────────────────────┘
-                                ▼
-                    ┌─────────────────────┐
-                    │ mart_recovery_state │  ★ PUBLIC API
-                    │ (one row per day)   │  contract-tested
-                    └──────┬──────┬───────┘
-                           │      │
-           ┌───────────────┘      └────────────────────┐
-           ▼                                           ▼
-   ┌────────────────┐                       ┌──────────────────────┐
-   │ Streamlit app  │                       │ scripts/weekly_      │
-   │ (4 pages,      │                       │  health_review.py    │
-   │  Altair)       │                       │ (briefing → stdout)  │
-   └────────────────┘                       └──────────┬───────────┘
-                                                       │
-                                                       ▼
-                                       ┌──────────────────────────┐
-                                       │ weekly-health-review     │
-                                       │  Claude skill            │
-                                       └──────────┬───────────────┘
-                                                  │
-                                                  ▼
-                              vault: 40-areas/health/weekly-health-reviews.md
-                                                  │
-                                                  ▼
-                                       ┌──────────────────────────┐
-                                       │ weekly-workout-planner   │  reads latest H2,
-                                       │  Claude skill            │  applies recovery
-                                       └──────────────────────────┘  rules to next plan
+```mermaid
+%% Source of truth: docs/diagrams/system-context.mmd
+flowchart TD
+    subgraph SRC["📱 Source device"]
+        IOS["Simple Health Export (iOS)<br/>HealthKit → CSV<br/>type,sourceName,productType,startDate,endDate,unit,value"]
+    end
+
+    subgraph ING["⚙️ Ingestion — Python 3.12 · Prefect 3.x"]
+        DROP["data/raw/ drop folder<br/>(synced via iCloud Drive)"]
+        FLOW(["weekly_load flow<br/>cron: Sun 06:00 America/Chicago"])
+        LOAD["Loaders (idempotent)<br/>quantities · workouts · categories"]
+        ENR["Enrichment loaders<br/>OpenWeather · Google Calendar"]
+    end
+
+    subgraph PG["🗄️ Postgres 16 (Docker)"]
+        RAW["raw.*  (7 tables)<br/>+ file_inventory SHA256 ledger"]
+        STG["analytics_staging<br/>5 views · TZ→America/Chicago · source dedup"]
+        INT["analytics_intermediate<br/>3 models · workout×HR range-join"]
+        MARTS["analytics_marts<br/>16 other marts (17 incl. ★)"]
+        REC{{"★ mart_recovery_state<br/>PUBLIC API · daily grain<br/>14 cols · contract-tested"}}
+    end
+
+    DBT["dbt-core 1.11<br/>staging → intermediate → marts"]
+
+    subgraph CONS["📤 Consumers"]
+        APP["Streamlit app<br/>12 pages + Altair"]
+        WHR["weekly-health-review<br/>Claude skill → vault .md"]
+        COACH["daily-workout-coach<br/>Claude skill → vault .md"]
+        TEMPO["Tempo PWA (stopwatch)<br/>Rhythm readiness band"]
+    end
+
+    FS[("🔥 Firestore<br/>recovery_state: latest + history")]
+    PUSH["📲 Pushover<br/>anomaly alerts"]
+
+    IOS --> DROP
+    DROP --> LOAD
+    FLOW --> LOAD --> RAW
+    FLOW --> ENR --> RAW
+    RAW --> DBT
+    DBT --> STG --> INT --> MARTS
+    MARTS --> REC
+    REC --> APP
+    MARTS --> APP
+    REC --> WHR
+    REC --> COACH
+    MARTS --> COACH
+    REC -->|"push_recovery_state.py (flow step)"| FS
+    FS --> TEMPO
+    REC -->|"notify rules (flow step)"| PUSH
+
+    classDef api fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#000;
+    class REC api;
 ```
 
-Prefect schedules `weekly_load` on Sunday 06:00 CT to refresh raw + dbt.
+The diagram source lives in [`docs/diagrams/system-context.mmd`](docs/diagrams/system-context.mmd);
+the keyed raw-layer ERD (PK/FK/indexes) is in [`docs/diagrams/raw-erd.dbml`](docs/diagrams/raw-erd.dbml).
+
+The dbt layer is **strict** `staging → intermediate → marts`: 5 staging views,
+3 intermediate models, and 17 marts (`mart_recovery_state` + 16 others — full
+catalog in the [data dictionary](docs/reference/data-dictionary.md)). Marts never
+select from `source()`. Prefect schedules `weekly_load` on Sunday 06:00 CT to
+refresh raw + dbt, then feeds the three `mart_recovery_state` consumers.
+
+## App pages
+
+Twelve Streamlit pages under `app/pages/` (plus `home.py`), each backed by marts:
+
+| Page | What it shows | Key marts |
+| --- | --- | --- |
+| `01_daily` | Per-metric tabs (RHR / HRV / VO₂ max / weight) | `mart_daily_rhr`, `mart_daily_hrv`, `mart_daily_vo2max`, `mart_daily_weight` |
+| `02_weekly_review` | Recovery signal + ACWR bands (the headline page) | `mart_recovery_state` |
+| `03_training_load` | Acute/chronic load, Zone 2, per-workout zones, HRR | `mart_training_load`, `mart_workout_zones`, `mart_workout_hrr` |
+| `04_body_comp` | Body composition trend | _stub — Week 2 TODO_ |
+| `05_year_view` | Year-in-pixels heatmap | `mart_recovery_state`, `mart_training_load` |
+| `06_anomaly` | z-score anomaly dashboard (\|z\| > 2) | `mart_daily_anomaly_bands` |
+| `07_readiness` | Readiness quadrant | `mart_recovery_state`, `mart_workout_zones` |
+| `08_aerobic_efficiency` | Z2 efficiency drift | `mart_monthly_aerobic_efficiency`, `mart_daily_vo2max` (+ `hr_zones` seed) |
+| `09_correlations` | Lagged correlations vs. external context | `mart_daily_signals`, `mart_daily_context` |
+| `10_ask` | Conversational "Ask your health data" (Claude over the marts) | dbt manifest + marts |
+| `11_forecast` | 7-day Holt forecasts + backtest accuracy | `mart_forecast_bands`, `mart_forecast_backtest` |
+| `12_sleep` | Hypnogram, nights, naps | `mart_sleep_nights`, `mart_sleep_naps`, `mart_sleep_stages` |
 
 ## Stack
 
@@ -144,19 +157,27 @@ Prefect schedules `weekly_load` on Sunday 06:00 CT to refresh raw + dbt.
 | Transforms     | dbt-core + dbt-postgres           |
 | Visualization  | Streamlit + Altair                |
 | Lint / Test    | Ruff, pytest, mypy                |
-| CI             | GitHub Actions (ruff + dbt parse + pytest) |
+| CI             | GitHub Actions (ruff · mypy · pytest+cov · dbt parse · dbt build) |
 
 ## Roadmap
 
-**Week 1 — Foundations.** ✅ Postgres up, idempotent file inventory, RestingHeartRate loaded end-to-end, first staging model + mart, first Streamlit chart.
+**Weeks 1–4 — Foundations → skill integration.** ✅ Idempotent file inventory +
+generic quantities loader (35 metric types), workouts loader, the
+`int_workout_hr_samples` range-join, `mart_workout_zones` / `mart_training_load`
+(TRIMP + ACWR), the `mart_recovery_state` public API, the Prefect weekly flow
+(Sun 06:00 CT), and the first `weekly-health-review` skill consumer.
 
-**Week 2 — Breadth.** ✅ Generic quantities loader (35 metric types: HR, HRV, RHR, VO2 Max, energy, steps, dietary, ...). Batch dispatcher walks a folder and routes each CSV by HK type prefix.
+**Shipped since (PRs #5–#31).** ✅ Sleep analytics stack (hypnogram + nights/naps +
+composite score), per-workout HRR, OpenWeather + Google Calendar enrichment marts,
+the anomaly → Pushover notification pipeline, a conversational "Ask" page (Claude
+over the marts), pure-SQL Holt's-method forecasting + walk-forward backtest, a
+second consumer (`daily-workout-coach`) and a third (the Tempo PWA Firestore feed),
+self-hosted Prefect via launchd, dbt source-freshness checks, and mypy + coverage
+in CI. The app is now **12 pages over 17 marts**.
 
-**Week 3 — Workouts + Integration.** ✅ Workouts loader (unit-embedded value parser), `int_workout_hr_samples` (range-joined, zone-tagged), `mart_workout_zones`, `mart_training_load` (TRIMP + ACWR), `mart_recovery_state` (public API).
-
-**Week 4 — Automation + Skill Integration.** ✅ Prefect scheduled flow (Sunday 06:00 CT). `weekly-health-review` Claude skill reads `mart_recovery_state`, writes a vault briefing. `weekly-workout-planner` skill reads the briefing and adjusts its plan (deload on injury-risk ACWR, rebuild volume on under-training, sacred Mon Yoga / Sun Rest preserved).
-
-**What's deferred.** `categories` loader (sleep stages, mindfulness sessions). Rich derived marts on dietary metrics. Prefect scheduler running under launchd for survive-sleep durability. dbt source freshness checks.
+**Next.** See [`BACKLOG.md`](BACKLOG.md) for the live, typed backlog and
+[`docs/artifacts-plan.md`](docs/artifacts-plan.md) for the docs roadmap (ADRs,
+CHANGELOG, dbt-lineage diagram, forecasting design doc).
 
 ## Local setup
 
@@ -216,8 +237,9 @@ pre-commit run --hook-stage pre-push --all-files
 
 The Prefect flow `ingest.flows.weekly_load` is the full weekly refresh: it
 walks `data/raw/`, loads any new HK CSVs through the batch dispatcher, backfills
-weather + calendar, runs `dbt build` against the real schema, and evaluates
-notification rules. It's idempotent — re-running on a clean folder is a no-op.
+weather + calendar, runs `dbt build` against the real schema, evaluates
+notification rules, and pushes `mart_recovery_state` to Firestore. It's
+idempotent — re-running on a clean folder is a no-op.
 
 ```bash
 # Run once:
@@ -232,18 +254,26 @@ alive and fires weekly. Pair it with `caffeinate` or a launchd plist to survive
 sleep. Full setup, schedule rationale, manual-run, and the laptop-bound
 tradeoff are in [docs/automation.md](docs/automation.md).
 
-## Generate the weekly briefing
+## Feed the consumers
 
-Once data is loaded, produce the markdown block consumed by the
-`weekly-health-review` skill:
+`mart_recovery_state` has three downstream consumers (see the
+[data dictionary](docs/reference/data-dictionary.md) for the full contract):
 
 ```bash
+# 1. weekly-health-review skill — weekly H2 briefing to stdout (→ vault)
 uv run python scripts/weekly_health_review.py
+
+# 2. daily-workout-coach skill — today's session card to stdout (→ vault)
+uv run python scripts/daily_workout_coach.py
+
+# 3. Tempo PWA — push latest + 14-day history to Firestore (no-op without creds)
+uv run python scripts/push_recovery_state.py --dry-run
 ```
 
-Pipes a complete H2 block to stdout — signal headline, day-by-day table,
-1–4 prescriptive recommendations derived from real rules (ACWR sweet spot,
-HRV trend, Zone 2 deficit, strain-day count).
+The weekly briefing pipes a complete H2 block — signal headline, day-by-day
+table, and 1–4 prescriptive recommendations from real rules (ACWR sweet spot,
+HRV trend, Zone 2 deficit, strain-day count). All three run as steps of the
+`weekly_load` flow, and each is independently re-runnable.
 
 ## Common commands
 
@@ -278,34 +308,44 @@ Direct links to the most interesting files, in case you're skimming:
 - [`transform/models/marts/mart_recovery_state.sql`](transform/models/marts/mart_recovery_state.sql) — the public-API mart. Contract-tested with `accepted_values` on `recovery_signal` and `unique(day)`.
 - [`transform/models/intermediate/int_workout_hr_samples.sql`](transform/models/intermediate/int_workout_hr_samples.sql) — the range-join (workouts × HR samples) plus `LEAD()` per-sample duration. Materialized as a table to amortize cost.
 - [`transform/models/marts/mart_training_load.sql`](transform/models/marts/mart_training_load.sql) — date-spine + rolling 7-day acute / 28-day chronic + ACWR. The denominate-correctly-through-rest-days move.
+- [`transform/macros/holt_forecast.sql`](transform/macros/holt_forecast.sql) — Holt's linear method (level + trend) in pure SQL via `WITH RECURSIVE`. Powers `mart_forecast_bands` + `mart_forecast_backtest`.
 - [`transform/models/staging/stg_quantities.sql`](transform/models/staging/stg_quantities.sql) — TZ normalization + multi-source dedup (Apple Watch > iPhone > other) via `row_number()`.
 - [`ingest/loaders/quantities.py`](ingest/loaders/quantities.py) — two-level idempotency: SHA file ledger + ON CONFLICT row dedup, both inside `engine.begin()`.
 - [`ingest/loaders/workouts.py`](ingest/loaders/workouts.py) — unit-embedded value parser (`"659.283 kcal"` → `659.283`), tolerant of missing columns per activity type.
 - [`scripts/weekly_health_review.py`](scripts/weekly_health_review.py) — briefing generator. Rule-based recommendations (ACWR sweet-spot, HRV trend, Z2 deficit, strain count).
 - [`app/pages/02_weekly_review.py`](app/pages/02_weekly_review.py) — the Streamlit page screenshotted above. Altair layered chart with `mark_rect` bands.
 - [`transform/seeds/hr_zones.csv`](transform/seeds/hr_zones.csv) — HR zones as configuration. Zone 2 locked at 136–153 bpm.
+- [`docs/reference/data-dictionary.md`](docs/reference/data-dictionary.md) — the public-API contract (mart columns + `recovery_signal` enum + Firestore shape), the full 17-mart catalog, and a domain glossary.
+- [`docs/diagrams/`](docs/diagrams/) — `system-context.mmd` (architecture, Mermaid) + `raw-erd.dbml` (raw-layer ERD, DBML).
 
 ## Project structure
 
 ```
 personal-health-elt/
 ├── ingest/                  Python — config, file inventory, loaders, Prefect flow
-│   ├── loaders/
-│   │   ├── quantities.py    handles 35 HK quantity metric types
-│   │   ├── workouts.py      handles HK workouts (unit-embedded values)
-│   │   └── batch.py         dispatch table + folder walker
-│   └── flows/weekly_load.py Prefect flow + cron schedule
-├── transform/               dbt project
+│   ├── loaders/             quantities · workouts · categories · weather · calendar
+│   ├── flows/weekly_load.py Prefect flow + Sun 06:00 CT cron
+│   └── notifications/       anomaly rules → stdout + Pushover
+├── transform/               dbt project (staging → intermediate → marts)
 │   ├── models/
-│   │   ├── staging/         stg_quantities, stg_workouts (TZ + source-priority)
-│   │   ├── intermediate/    int_workout_hr_samples (range-join, table-materialized)
-│   │   └── marts/           mart_daily_* + mart_workout_zones + mart_training_load + mart_recovery_state★
-│   ├── seeds/hr_zones.csv   Zone 2 locked at 136–153 bpm (user's measured zone)
-│   └── tests/               schema-level tests on every model
-├── app/                     Streamlit (home + Daily + Weekly Review + Training Load)
+│   │   ├── staging/         5 views — TZ→America/Chicago + source-priority dedup
+│   │   ├── intermediate/    int_workout_hr_samples (range-join) + sleep periods/segments
+│   │   └── marts/           17 marts — daily physiology · training · sleep · forecast
+│   │                        + mart_recovery_state★ (public API)
+│   ├── seeds/               hr_zones (Zone 2 = 136–153 bpm) + sleep_score_weights
+│   ├── macros/              holt_forecast + rolling_trailing
+│   └── tests/               schema + singular tests
+├── app/                     Streamlit — home + 12 numbered pages + lib/queries.py
 ├── scripts/
-│   ├── init_raw_schema.sql  raw schema bootstrap
-│   └── weekly_health_review.py  briefing generator (stdout → vault)
+│   ├── init_raw_schema.sql      raw schema bootstrap
+│   ├── weekly_health_review.py  weekly briefing   → vault
+│   ├── daily_workout_coach.py   daily session card → vault
+│   └── push_recovery_state.py   Firestore feed     → Tempo PWA
+├── docs/
+│   ├── reference/data-dictionary.md   mart_recovery_state contract + 17-mart catalog
+│   ├── diagrams/                       system-context.mmd + raw-erd.dbml
+│   ├── automation.md · DEPLOYMENT.md   runbooks
+│   └── artifacts-plan.md               docs roadmap
 └── tests/                   pytest unit tests for loaders + parsers
 ```
 
@@ -323,14 +363,15 @@ A few deliberate design choices worth calling out:
   `None` at the record boundary. Caught by running on real data, not
   by tests.
 
-- **The interesting SQL.** `int_workout_hr_samples` cross-joins 78
-  workouts × 43k HR samples, filters by time range, tags each sample
-  with a zone via `BETWEEN` against the `hr_zones` seed, and uses
+- **The interesting SQL.** `int_workout_hr_samples` cross-joins 186
+  workouts against the HR-sample stream, filters by time range, tags each
+  sample with a zone via `BETWEEN` against the `hr_zones` seed, and uses
   `LEAD()` to compute per-sample duration (`coalesce(next_ts,
-  workout_end_ts) - current_ts`). Originally a view; materialized as a
-  table after profiling — the join is the biggest cost in the project,
-  and every downstream mart + test re-executes it. Materialization
-  drops downstream reads from seconds to microseconds.
+  workout_end_ts) - current_ts`) — 72k tagged samples result. Originally
+  a view; materialized as a table after profiling — the join is the
+  biggest cost in the project, and every downstream mart + test
+  re-executes it. Materialization drops downstream reads from seconds to
+  microseconds.
 
 - **Date-spine rolling averages.** `mart_training_load` `generate_series`'s
   the observed range so zero-load days count as 0, not "missing". 7-day
@@ -341,8 +382,10 @@ A few deliberate design choices worth calling out:
 - **`mart_recovery_state` as a versioned interface.** Schema enforced
   via dbt `accepted_values` (`recovery_signal IN ('well_recovered',
   'neutral', 'strained', 'insufficient_data')`) and `unique(day)`.
-  Changes here require updating the consumer skill in lockstep — the
-  test fails before the skill does.
+  It now has **three** consumers (weekly-health-review skill, the Tempo
+  PWA Firestore feed, and daily-workout-coach) — changes require updating
+  all three in lockstep, and the test fails before any consumer does. The
+  contract is documented in [`docs/reference/data-dictionary.md`](docs/reference/data-dictionary.md).
 
 - **Multi-source dedup priority.** When the same metric comes from
   multiple devices, staging picks the winner via `source_priority`:
@@ -368,13 +411,20 @@ A few deliberate design choices worth calling out:
   are also exposed. The downstream skill can override the bucket but
   shouldn't have to recompute the inputs.
 
-- **Closed-loop skill integration.** The full chain works:
-  `Apple Watch → Postgres → mart_recovery_state → Python briefing
-  generator → vault Markdown → weekly-health-review skill → second
-  vault file → weekly-workout-planner skill → recovery-aware 7-day
-  plan → morning briefing reads today's row`. Every step is
-  idempotent and re-runnable.
+- **Pure-SQL forecasting, no Python ML.** The `holt_forecast` macro
+  fits Holt's linear method (level + trend, α=0.3 β=0.1) with a
+  `WITH RECURSIVE` walk over the daily series. `mart_forecast_bands`
+  adds heuristic confidence bands and `mart_forecast_backtest` does a
+  walk-forward MAE/RMSE/MAPE — all in the warehouse, so the forecast
+  rebuilds with every `dbt build`.
 
-- **CI green from day one.** `ruff check`, `pytest`, and
-  `dbt parse` run on every push. Real-data integration tests are
-  manual locally; CI stays hermetic.
+- **Closed-loop skill integration.** The full chain works:
+  `Apple Watch → Postgres → mart_recovery_state → Python generators →
+  vault Markdown / Firestore → weekly-health-review + daily-workout-coach
+  skills + Tempo PWA Rhythm view`. Every step is idempotent and
+  re-runnable.
+
+- **CI green from day one.** `ruff`, `mypy`, `pytest` (+ coverage),
+  `dbt parse`, and a full `dbt build` against a fresh Postgres run on
+  every push. Real-data integration tests are manual locally; CI stays
+  hermetic.

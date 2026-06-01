@@ -1,0 +1,60 @@
+%% System / container context — personal-health-elt
+%% Replaces the stale README ASCII diagram. Mermaid flowchart (SELECT/data-flow
+%% edges, not key relationships — see docs/diagrams/raw-erd.dbml for the keyed ERD).
+%% Render: any Mermaid viewer, or GitHub's ```mermaid fenced block (see README).
+%% Maintenance: update when the flow, datastores, or mart_recovery_state consumers change.
+flowchart TD
+    %% ---------------- Source ----------------
+    subgraph SRC["📱 Source device"]
+        IOS["Simple Health Export (iOS)<br/>HealthKit → CSV<br/>type,sourceName,productType,startDate,endDate,unit,value"]
+    end
+
+    %% ---------------- Ingestion ----------------
+    subgraph ING["⚙️ Ingestion — Python 3.12 · Prefect 3.x"]
+        DROP["data/raw/ drop folder<br/>(synced via iCloud Drive)"]
+        FLOW(["weekly_load flow<br/>cron: Sun 06:00 America/Chicago"])
+        LOAD["Loaders (idempotent)<br/>quantities · workouts · categories"]
+        ENR["Enrichment loaders<br/>OpenWeather · Google Calendar"]
+    end
+
+    %% ---------------- Storage: Postgres ----------------
+    subgraph PG["🗄️ Postgres 16 (Docker)"]
+        RAW["raw.*  (7 tables)<br/>+ file_inventory SHA256 ledger"]
+        STG["analytics_staging<br/>5 views · TZ→America/Chicago · source dedup"]
+        INT["analytics_intermediate<br/>3 models · workout×HR range-join"]
+        MARTS["analytics_marts<br/>16 other marts (17 incl. ★)"]
+        REC{{"★ mart_recovery_state<br/>PUBLIC API · daily grain<br/>14 cols · contract-tested"}}
+    end
+
+    DBT["dbt-core 1.11<br/>staging → intermediate → marts"]
+
+    %% ---------------- Consumers ----------------
+    subgraph CONS["📤 Consumers"]
+        APP["Streamlit app<br/>12 pages + Altair"]
+        WHR["weekly-health-review<br/>Claude skill → vault .md"]
+        COACH["daily-workout-coach<br/>Claude skill → vault .md"]
+        TEMPO["Tempo PWA (stopwatch)<br/>Rhythm readiness band"]
+    end
+
+    FS[("🔥 Firestore<br/>recovery_state: latest + history")]
+    PUSH["📲 Pushover<br/>anomaly alerts"]
+
+    %% ---------------- Edges ----------------
+    IOS --> DROP
+    DROP --> LOAD
+    FLOW --> LOAD --> RAW
+    FLOW --> ENR --> RAW
+    RAW --> DBT
+    DBT --> STG --> INT --> MARTS
+    MARTS --> REC
+    REC --> APP
+    MARTS --> APP
+    REC --> WHR
+    REC --> COACH
+    MARTS --> COACH
+    REC -->|"push_recovery_state.py (flow step)"| FS
+    FS --> TEMPO
+    REC -->|"notify rules (flow step)"| PUSH
+
+    classDef api fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#000;
+    class REC api;
