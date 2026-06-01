@@ -1,0 +1,191 @@
+// =====================================================================
+// Raw-layer ERD — personal-health-elt
+// =====================================================================
+// Source of truth : scripts/init_raw_schema.sql (+ loader-created columns).
+// Notation        : DBML (https://dbml.dbdiagram.io) — real PK/FK/indexes.
+// Render / lint    : npx -y -p @dbml/cli dbml2sql --postgres docs/diagrams/raw-erd.dbml
+//                    (the bare `npx @dbml/cli ...` form fails npx bin-resolution;
+//                     the `-p @dbml/cli` form is required) — or paste into dbdiagram.io
+// Maintenance      : regenerate when scripts/init_raw_schema.sql changes.
+//
+// The story this ERD tells: a hub-and-spoke idempotency model. Every loader
+// table carries source_sha256 → raw.file_inventory.sha256. A file's hash is
+// written to file_inventory inside the SAME transaction as its rows, so a
+// re-run of an already-seen file short-circuits at the ledger and inserts
+// nothing. weather and notification_log are the two intentional exceptions
+// (no file-hash provenance — see their notes).
+//
+// NOTE on table creation: file_inventory, weather, calendar_daily, and
+// notification_log are created by init_raw_schema.sql. quantities, workouts,
+// and categories are created by their LOADERS on first run (columns stay
+// colocated with the loading code). This ERD documents the full raw.* shape
+// as loaded.
+// =====================================================================
+
+Project personal_health_elt {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Apple Health ELT — raw landing zone (schema `raw`).
+    Idempotency hub: raw.file_inventory (SHA256 file ledger).
+    Downstream: dbt reads these via 5 sources → analytics_staging/intermediate/marts.
+  '''
+}
+
+// ---------------------------------------------------------------------
+// HUB — the SHA256 file ledger
+// ---------------------------------------------------------------------
+Table raw.file_inventory {
+  sha256     text        [pk, note: 'SHA256 of the consumed CSV / ICS response body']
+  file_name  text        [not null]
+  loaded_at  timestamptz [not null, default: `now()`]
+
+  Note: 'SHA256 ledger of Apple Health files already consumed. Loaders skip any file whose hash is present.'
+}
+
+// ---------------------------------------------------------------------
+// SPOKE — quantity samples (HR, HRV, RHR, weight, VO2 max, energy, steps, ...)
+// ---------------------------------------------------------------------
+Table raw.quantities {
+  metric_type    text             [not null]
+  source_name    text
+  source_version text
+  product_type   text
+  device         text
+  start_ts       timestamptz      [not null]
+  end_ts         timestamptz
+  unit           text
+  value          "double precision" [not null]
+  source_file    text             [not null]
+  source_sha256  text             [not null, ref: > raw.file_inventory.sha256]
+  loaded_at      timestamptz      [not null, default: `now()`]
+
+  indexes {
+    (metric_type, source_name, start_ts) [pk]
+    (metric_type, start_ts) [name: 'quantities_metric_time_idx']
+  }
+  Note: 'Raw HealthKit quantity samples. Loaders upsert via ON CONFLICT on the natural key (metric_type, source_name, start_ts).'
+}
+
+// ---------------------------------------------------------------------
+// SPOKE — workouts (one row per HealthKit session)
+// ---------------------------------------------------------------------
+Table raw.workouts {
+  activity_type     text             [not null]
+  source_name       text
+  source_version    text
+  product_type      text
+  start_ts          timestamptz      [not null]
+  end_ts            timestamptz      [not null]
+  duration_sec      "double precision" [not null]
+  total_energy_kcal "double precision"
+  total_distance_m  "double precision"
+  elevation_asc_m   "double precision"
+  elevation_desc_m  "double precision"
+  max_speed_mps     "double precision"
+  indoor            boolean
+  source_file       text             [not null]
+  source_sha256     text             [not null, ref: > raw.file_inventory.sha256]
+  loaded_at         timestamptz      [not null, default: `now()`]
+
+  indexes {
+    (activity_type, source_name, start_ts) [pk]
+    (activity_type, start_ts) [name: 'workouts_activity_time_idx']
+    (start_ts, end_ts)        [name: 'workouts_time_range_idx']
+  }
+  Note: 'Raw HealthKit workouts. The (start_ts, end_ts) index supports the HR-sample range-join in int_workout_hr_samples. Unit-embedded source fields ("659.283 kcal") are parsed to numeric at the loader.'
+}
+
+// ---------------------------------------------------------------------
+// SPOKE — category samples (sleep stages, mindful, stand, HR threshold events)
+// ---------------------------------------------------------------------
+Table raw.categories {
+  category_type           text             [not null]
+  category_value          text
+  source_name             text
+  source_version          text
+  product_type            text
+  device                  text
+  start_ts                timestamptz      [not null]
+  end_ts                  timestamptz
+  hk_time_zone            text             [note: 'HKTimeZone metadata on sleep rows']
+  hk_heart_rate_threshold text             [note: 'HKHeartRateEventThreshold on HR-event rows']
+  source_file             text             [not null]
+  source_sha256           text             [not null, ref: > raw.file_inventory.sha256]
+  loaded_at               timestamptz      [not null, default: `now()`]
+
+  indexes {
+    (category_type, source_name, start_ts) [pk]
+    (category_type, start_ts) [name: 'categories_type_time_idx']
+  }
+  Note: 'Raw HealthKit category samples. Loaders upsert via ON CONFLICT on the natural key (category_type, source_name, start_ts).'
+}
+
+// ---------------------------------------------------------------------
+// SPOKE — daily calendar density (Google Calendar secret iCal URL)
+// ---------------------------------------------------------------------
+Table raw.calendar_daily {
+  day                 date             [not null]
+  timed_event_count   integer          [not null, default: 0]
+  timed_event_hours   "double precision" [not null, default: 0]
+  all_day_event_count integer          [not null, default: 0]
+  first_event_local   timestamp
+  last_event_local    timestamp
+  source_sha256       text             [not null, ref: > raw.file_inventory.sha256]
+  loaded_at           timestamptz      [not null, default: `now()`]
+
+  indexes {
+    (day, source_sha256) [pk]
+    (day) [name: 'calendar_daily_day_idx']
+  }
+  Note: 'Per-day calendar density parsed from a Google Calendar secret iCal URL. Recurring events expanded into instances before aggregation. stg_calendar takes the latest SHA per day.'
+}
+
+// ---------------------------------------------------------------------
+// STANDALONE — daily weather (no file-hash provenance: API-fetched)
+// ---------------------------------------------------------------------
+// API-sourced (OpenWeather One Call 3.0), not file-sourced — so there is no
+// source_sha256 and no FK to file_inventory. Idempotency rides on the
+// (obs_date, lat, lon) PK instead of the file ledger.
+Table raw.weather {
+  obs_date              date             [not null]
+  lat                   "double precision" [not null]
+  lon                   "double precision" [not null]
+  temp_min_k            "double precision"
+  temp_max_k            "double precision"
+  temp_morning_k        "double precision"
+  temp_afternoon_k      "double precision"
+  temp_evening_k        "double precision"
+  temp_night_k          "double precision"
+  humidity_afternoon    "double precision"
+  cloud_cover_afternoon "double precision"
+  pressure_afternoon    "double precision"
+  precip_total_mm       "double precision"
+  wind_max_mps          "double precision"
+  wind_max_dir_deg      "double precision"
+  loaded_at             timestamptz      [not null, default: `now()`]
+
+  indexes {
+    (obs_date, lat, lon) [pk]
+    (obs_date) [name: 'weather_date_idx']
+  }
+  Note: 'Daily weather summaries from OpenWeather One Call 3.0. Units are the API "standard" (K / m/s / hPa / mm); converted to °C / mph / ... in stg_weather. No FK to file_inventory — fetched from an API, idempotent on the (obs_date, lat, lon) PK.'
+}
+
+// ---------------------------------------------------------------------
+// STANDALONE — notification ledger (no file provenance; once-per-(rule,day))
+// ---------------------------------------------------------------------
+Table raw.notification_log {
+  rule_name text        [not null]
+  day       date        [not null]
+  severity  text        [not null]
+  signal    text
+  message   text        [not null]
+  transport text        [not null]
+  sent_at   timestamptz [not null, default: `now()`]
+
+  indexes {
+    (rule_name, day) [pk]
+    (day) [name: 'notification_log_day_idx']
+  }
+  Note: 'Notifications already fired by the anomaly pipeline. (rule_name, day) PK guarantees once-per-day dedup; re-running weekly_load is a no-op. No FK to a rules table (rules live in YAML) or to the mart (avoid a cross-schema FK to a dbt-managed table).'
+}
