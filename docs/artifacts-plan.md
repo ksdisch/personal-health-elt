@@ -1,5 +1,10 @@
 # Canonical Engineering Artifacts — Audit & Generation Plan
 
+## Changelog
+- 2026-06-01: Generated CHANGELOG.md at `CHANGELOG.md` (Keep a Changelog + SemVer, backfilled v0.1.0–v0.3.0 from PRs #1–#33) + git tags v0.1.0/v0.2.0/v0.3.0. Status: 🟢 → ✅.
+- 2026-06-01: Generated ADRs 0001–0007 at `docs/adr/000N-*.md` (+ index `docs/adr/README.md`), all Accepted. Status: 🟢 → ✅.
+- 2026-05-31: Generated Tier-1 artifacts — README refresh, `docs/reference/data-dictionary.md`, `docs/diagrams/system-context.mmd`, `docs/diagrams/raw-erd.dbml` (merged via PR #33).
+
 > **Status:** Plan only. This document is the source of truth for a follow-up
 > generation session. It does **not** create the artifacts it recommends, and
 > no source code was modified to produce it.
@@ -62,7 +67,7 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | `README.md` | ⚠️ STALE | Polished (380 ln, badges, ASCII diagram), but **materially wrong**: claims "4 pages" (actual `app/pages/` = **12**), shows ~7 marts (actual `transform/models/marts/` = **17**), describes **1** `mart_recovery_state` consumer (actual **3**: weekly-review skill, Tempo Firestore feed `push_recovery_state.py`, daily-coach), CI claim omits the `mypy` step that ci.yml actually runs, "Live app" URL still a TODO. |
 | `LICENSE` | ✅ PRESENT | MIT, "Copyright (c) 2026 Kyle Disch" — matches the README MIT badge. |
 | `.env.example` | ✅ PRESENT | Tracked; documents all Postgres + optional vars (OpenWeather, Calendar, Pushover, Anthropic, Tempo Firebase). **Open question:** a `.env` also exists at repo root — confirm it is gitignored and uncommitted (not part of this audit's scope to change). |
-| `CHANGELOG.md` | 🟢 RECOMMENDED | 30 merged PRs (#1–#30), **zero git tags**, no release history. Portfolio reviewers read a changelog as a velocity signal; the existing conventional-commit style (`feat/fix/refactor/test/docs/chore/ci`) makes it semi-automatable. |
+| `CHANGELOG.md` | ✅ PRESENT | Generated `CHANGELOG.md` (Keep a Changelog + SemVer), backfilled `v0.1.0`/`v0.2.0`/`v0.3.0` from PR history #1–#33. 30 merged PRs (#1–#30), **zero git tags**, no release history. Portfolio reviewers read a changelog as a velocity signal; the existing conventional-commit style (`feat/fix/refactor/test/docs/chore/ci`) makes it semi-automatable. |
 | PR template | 🟢 RECOMMENDED | Clear PR-numbered workflow exists (#1–#30) but `.github/` holds **only** `ci.yml` — a `PULL_REQUEST_TEMPLATE.md` standardizes the description shape for the portfolio audience. |
 | `justfile` | 🟢 RECOMMENDED (light) | Run commands are long (`uv run dbt build --project-dir transform --profiles-dir transform`) and live only in CLAUDE.md prose; a `justfile` wrapping them reads well to reviewers and removes copy-paste friction. |
 | `CONTRIBUTING.md` | 🟡 OPTIONAL | Solo repo, but the cheapest portfolio credibility add — a 1-screen "dev loop / how to run tests" liftable from README's command section. |
@@ -74,7 +79,7 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 
 | Artifact | Status | Justification |
 |---|---|---|
-| ADRs | 🟢 RECOMMENDED | Several **hard-to-reverse** decisions live only as CLAUDE.md prose and deserve numbered, append-only records — strong Data-Eng portfolio signal: (1) **UTC→America/Chicago at staging only**; (2) **multi-source dedup priority** Apple Watch > iPhone > 3rd-party via `row_number()`; (3) **two-level idempotency** (SHA file ledger + row-level `ON CONFLICT`, single transaction); (4) **self-hosted Prefect over GHA/launchd** (data locality — see automation.md rationale); (5) **`mart_recovery_state` as a versioned public API** with lockstep consumers; (6) **pure-SQL Holt's-method forecasting** (#28) instead of a Python ML dep; (7) **dbt-1.8 nested `accepted_values`** contract form. |
+| ADRs | ✅ PRESENT | Generated `docs/adr/0001`–`0007` (+ index `docs/adr/README.md`), all Accepted. Several **hard-to-reverse** decisions live only as CLAUDE.md prose and deserve numbered, append-only records — strong Data-Eng portfolio signal: (1) **UTC→America/Chicago at staging only**; (2) **multi-source dedup priority** Apple Watch > iPhone > 3rd-party via `row_number()`; (3) **two-level idempotency** (SHA file ledger + row-level `ON CONFLICT`, single transaction); (4) **self-hosted Prefect over GHA/launchd** (data locality — see automation.md rationale); (5) **`mart_recovery_state` as a versioned public API** with lockstep consumers; (6) **pure-SQL Holt's-method forecasting** (#28) instead of a Python ML dep; (7) **dbt-1.8 nested `accepted_values`** contract form. |
 | Design Doc / RFC / Tech Spec | 🟡 OPTIONAL | Most features already shipped, so retroactive specs are lower-leverage than ADRs. The one genuine candidate: a short design doc for the **Holt's-method forecasting marts** (`mart_forecast_bands`/`mart_forecast_backtest` + `holt_forecast` macro), since the math/backtest design isn't obvious from SQL. |
 | PRD | ⛔ NOT APPLICABLE | Single-user personal tool; the "product" is the maintainer. README's "What this demonstrates" already covers the why. |
 | Postmortem / RCA (instances) | ⛔ N/A (yet) | No incidents recorded. The **template** is recommended (see Ops). |
@@ -144,9 +149,9 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 
 | # | Artifact |
 |---|---|
-| 5 | **ADRs 0001–0007** (the 7 decisions listed in the audit) |
+| 5 | ✅ **ADRs 0001–0007** (the 7 decisions listed in the audit) — done |
 | 6 | **dbt DAG lineage diagram** (Mermaid) + **`dbt docs generate` in CI** |
-| 7 | **CHANGELOG.md** + first **git tags** (backfill `v0.x` from PR history) |
+| 7 | ✅ **CHANGELOG.md** + first **git tags** (backfill `v0.x` from PR history) — done |
 | 8 | **`weekly_load` sequence diagram** (Mermaid) |
 | 9 | **Postmortem template** + **flow-failure runbook** |
 | 10 | **ROADMAP.md** (now/next/later, restructured from BACKLOG) |
