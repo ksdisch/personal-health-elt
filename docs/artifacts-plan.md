@@ -1,6 +1,9 @@
 # Canonical Engineering Artifacts — Audit & Generation Plan
 
 ## Changelog
+- 2026-06-03: Generated ROADMAP.md at `ROADMAP.md` (now/next/later forward narrative restructured from BACKLOG.md; BACKLOG kept as the detailed live backlog and cross-linked per item). Status: 🟢 → ✅.
+- 2026-06-03: Generated postmortem template at `docs/postmortems/TEMPLATE.md` (adapted to a single-user data-pipeline severity scale S1–S3 + a pipeline-specific "Data-integrity verification" section). Status: 🟢 → ✅.
+- 2026-06-03: Generated flow-failure runbook at `docs/runbooks/weekly-load-failure.md` (key message: re-running `weekly_load` is safe — idempotent loaders; also documents the real detection signals and the no-alert-on-flow-failure gap). Status: 🟢 → ✅. **This completes Tier-2.**
 - 2026-06-03: Generated dbt lineage diagram at `docs/diagrams/dbt-lineage.mmd` (full DAG, layer-grouped) and `weekly_load` sequence diagram at `docs/diagrams/weekly-load-sequence.mmd`; both live-rendered via mermaid-cli. Status: 🟢 → ✅. (`dbt docs generate` in CI remains open — it's a `.github/` code change, out of artifacts-generate scope.)
 - 2026-06-01: Generated CHANGELOG.md at `CHANGELOG.md` (Keep a Changelog + SemVer, backfilled v0.1.0–v0.3.0 from PRs #1–#33) + git tags v0.1.0/v0.2.0/v0.3.0. Status: 🟢 → ✅.
 - 2026-06-01: Generated ADRs 0001–0007 at `docs/adr/000N-*.md` (+ index `docs/adr/README.md`), all Accepted. Status: 🟢 → ✅.
@@ -90,7 +93,7 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | Artifact | Status | Justification |
 |---|---|---|
 | `BACKLOG.md` | ✅ PRESENT | 291 ln, current to 2026-05-12, typed items (Feature/Improvement/Refactor/Exploration/Bug) with Why/Acceptance/Size/Added. Functions as the live backlog. |
-| Roadmap (now/next/later) | 🟢 RECOMMENDED | No now/next/later framing exists. README's roadmap is **week-by-week and stale** (stops at "Week 4"; reality shipped through #30). A `ROADMAP.md` (or a now/next/later header section in BACKLOG) gives reviewers a forward narrative. |
+| Roadmap (now/next/later) | ✅ PRESENT (`ROADMAP.md`) | No now/next/later framing exists. README's roadmap is **week-by-week and stale** (stops at "Week 4"; reality shipped through #30). A `ROADMAP.md` (or a now/next/later header section in BACKLOG) gives reviewers a forward narrative. |
 | User stories | ⛔ N/A | Solo personal tool. |
 | Sprint plan / WBS / RACI / OKRs / Gantt / Kanban | ⛔ N/A | Solo portfolio repo — these are team-coordination artifacts with no audience here. |
 
@@ -115,8 +118,8 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 |---|---|---|
 | Runbook (scheduled refresh) | ✅ PRESENT | `docs/automation.md` (237 ln) — rationale, `flow.serve()` mechanism, schedule, iCloud export path, launchd setup, manual run, sleep/pmset caveat. Solid. |
 | Runbook (cold-start / cloud deploy) | ✅ PRESENT | `docs/DEPLOYMENT.md` (236 ln) — managed-Postgres provisioning, cold-start import, deploy targets, troubleshooting. |
-| Runbook (flow-failure re-run) | 🟢 RECOMMENDED | The flow already emits structured ERROR alerts + Pushover (#8, #23) and is laptop-bound (known tradeoff). A short "weekly_load failed / laptop asleep → how to re-run safely" runbook closes the loop (loaders are idempotent, so safe to re-run). |
-| Postmortem template | 🟢 RECOMMENDED | Cheap, and there are real failure surfaces (scheduled flow on a sleeping laptop, notification pipeline, dbt build drift). Gives a home for the first incident write-up. |
+| Runbook (flow-failure re-run) | ✅ PRESENT (`docs/runbooks/weekly-load-failure.md`) | The flow already emits structured ERROR alerts + Pushover (#8, #23) and is laptop-bound (known tradeoff). A short "weekly_load failed / laptop asleep → how to re-run safely" runbook closes the loop (loaders are idempotent, so safe to re-run). |
+| Postmortem template | ✅ PRESENT (`docs/postmortems/TEMPLATE.md`) | Cheap, and there are real failure surfaces (scheduled flow on a sleeping laptop, notification pipeline, dbt build drift). Gives a home for the first incident write-up. |
 | Playbook (per-scenario) | 🟡 OPTIONAL | E.g. "export didn't sync from iCloud", "dbt build failed mid-flow" — useful but lower priority under portfolio-first weighting. |
 | SLI / SLO / SLA | 🟡 OPTIONAL | No external SLA (single user). But `dbt source freshness` is already configured (#5) — that's a ready-made **freshness SLI**; a light "data ≤7 days fresh" SLO note would formalize it. |
 | On-call / escalation | ⛔ NOT APPLICABLE | Solo; "escalation" is a Pushover notification to the one user. |
@@ -154,8 +157,8 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | 6 | ✅ **dbt DAG lineage diagram** (Mermaid) — done. (`dbt docs generate` in CI still open — touches `.github/`, a code change.) |
 | 7 | ✅ **CHANGELOG.md** + first **git tags** (backfill `v0.x` from PR history) — done |
 | 8 | ✅ **`weekly_load` sequence diagram** (Mermaid) — done |
-| 9 | **Postmortem template** + **flow-failure runbook** |
-| 10 | **ROADMAP.md** (now/next/later, restructured from BACKLOG) |
+| 9 | ✅ **Postmortem template** (`docs/postmortems/TEMPLATE.md`) + **flow-failure runbook** (`docs/runbooks/weekly-load-failure.md`) — done |
+| 10 | ✅ **ROADMAP.md** (`ROADMAP.md`, now/next/later, restructured from BACKLOG) — done |
 
 **Tier 3 — nice-to-have**
 
