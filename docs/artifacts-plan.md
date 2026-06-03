@@ -1,6 +1,7 @@
 # Canonical Engineering Artifacts — Audit & Generation Plan
 
 ## Changelog
+- 2026-06-03: Generated dbt lineage diagram at `docs/diagrams/dbt-lineage.mmd` (full DAG, layer-grouped) and `weekly_load` sequence diagram at `docs/diagrams/weekly-load-sequence.mmd`; both live-rendered via mermaid-cli. Status: 🟢 → ✅. (`dbt docs generate` in CI remains open — it's a `.github/` code change, out of artifacts-generate scope.)
 - 2026-06-01: Generated CHANGELOG.md at `CHANGELOG.md` (Keep a Changelog + SemVer, backfilled v0.1.0–v0.3.0 from PRs #1–#33) + git tags v0.1.0/v0.2.0/v0.3.0. Status: 🟢 → ✅.
 - 2026-06-01: Generated ADRs 0001–0007 at `docs/adr/000N-*.md` (+ index `docs/adr/README.md`), all Accepted. Status: 🟢 → ✅.
 - 2026-05-31: Generated Tier-1 artifacts — README refresh, `docs/reference/data-dictionary.md`, `docs/diagrams/system-context.mmd`, `docs/diagrams/raw-erd.dbml` (merged via PR #33).
@@ -98,9 +99,9 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | Artifact | Status | Justification |
 |---|---|---|
 | **ERD (raw layer)** | 🟢 RECOMMENDED · **DBML** | `scripts/init_raw_schema.sql` gives explicit PKs, FKs (all loader tables → `raw.file_inventory.sha256`), indexes, and `COMMENT ON` — an ERD generates almost mechanically. The `file_inventory` hub-and-spoke is the centerpiece of the idempotency story. DBML round-trips from Postgres DDL and models FK/composite PKs faithfully. |
-| **dbt DAG / data lineage** | 🟢 RECOMMENDED · **Mermaid** | 25 models across strict staging(5)→intermediate(3)→marts(17). These are SELECT-lineage edges, **not** key relationships — Mermaid `flowchart` (not an ERD) is the correct notation. Centerpiece: `mart_recovery_state` as the hub feeding 3 consumers. |
+| **dbt DAG / data lineage** | ✅ PRESENT · **Mermaid** | Generated `docs/diagrams/dbt-lineage.mmd` (full DAG, layer-grouped; live-rendered). 25 models across strict staging(5)→intermediate(3)→marts(17). These are SELECT-lineage edges, **not** key relationships — Mermaid `flowchart` (not an ERD) is the correct notation. Centerpiece: `mart_recovery_state` as the hub feeding 3 consumers. |
 | **C4 Context / Container** | 🟢 RECOMMENDED · **Mermaid** | Replaces the **stale** README ASCII diagram. Shows CSV drop → loaders → Postgres → dbt → {Streamlit app, weekly-review skill, Tempo PWA Firestore, daily-coach}. Highest single portfolio-signal diagram; can be embedded in the refreshed README. |
-| Sequence diagram | 🟢 RECOMMENDED · **Mermaid** | The `weekly_load` flow is a clean sequence: hash CSV → load (quantities/categories/workouts) → optional weather/calendar → `dbt build` (skipped if 0 new rows) → notifications → Firestore push, with retries. Makes the orchestration legible. |
+| Sequence diagram | ✅ PRESENT · **Mermaid** | Generated `docs/diagrams/weekly-load-sequence.mmd` (live-rendered). The `weekly_load` flow is a clean sequence: hash CSV → load (quantities/categories/workouts) → optional weather/calendar → `dbt build` (skipped if 0 new rows) → notifications → Firestore push, with retries. Makes the orchestration legible. |
 | C4 Component | 🟡 OPTIONAL | Per-container component breakdown; lower leverage than context+container. |
 | State diagram | 🟡 OPTIONAL | `recovery_signal` is a bucketing (`well_recovered/neutral/strained/insufficient_data`), not a true state machine; a small classification diagram could live inside the data dictionary instead. |
 | Deployment / topology / cloud arch | 🟡 OPTIONAL | The laptop + launchd + Prefect + Postgres + Streamlit Cloud + Firestore topology is non-trivial but adequately covered by the C4 Container diagram + automation.md. |
@@ -150,9 +151,9 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | # | Artifact |
 |---|---|
 | 5 | ✅ **ADRs 0001–0007** (the 7 decisions listed in the audit) — done |
-| 6 | **dbt DAG lineage diagram** (Mermaid) + **`dbt docs generate` in CI** |
+| 6 | ✅ **dbt DAG lineage diagram** (Mermaid) — done. (`dbt docs generate` in CI still open — touches `.github/`, a code change.) |
 | 7 | ✅ **CHANGELOG.md** + first **git tags** (backfill `v0.x` from PR history) — done |
-| 8 | **`weekly_load` sequence diagram** (Mermaid) |
+| 8 | ✅ **`weekly_load` sequence diagram** (Mermaid) — done |
 | 9 | **Postmortem template** + **flow-failure runbook** |
 | 10 | **ROADMAP.md** (now/next/later, restructured from BACKLOG) |
 

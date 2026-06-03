@@ -1,0 +1,131 @@
+%% dbt SELECT-lineage DAG — personal-health-elt
+%% Every node is a dbt model/seed/source; every edge is a ref()/source() dependency
+%% (data flow, NOT key relationships — see docs/diagrams/raw-erd.dbml for the keyed ERD).
+%% Authoritative: extracted from transform/models/**/*.sql ref()/source() calls +
+%% the exposures in transform/models/marts/schema.yml. 25 models (5 staging,
+%% 3 intermediate, 17 marts) + 5 raw sources + 2 seeds + 3 exposures.
+%% Render: any Mermaid viewer, or GitHub ```mermaid. Lint: npx -y @mermaid-js/mermaid-cli -i this -o out.svg
+%% Maintenance: regenerate when models are added/removed or ref()/source() edges change
+%% (or rely on CI `dbt docs generate` — see docs/artifacts-plan.md §4).
+flowchart LR
+    %% ---------------- Raw sources ----------------
+    subgraph RAW["raw.* (sources)"]
+        src_quantities[(raw.quantities)]
+        src_categories[(raw.categories)]
+        src_workouts[(raw.workouts)]
+        src_weather[(raw.weather)]
+        src_calendar[(raw.calendar_daily)]
+    end
+
+    %% ---------------- Seeds ----------------
+    subgraph SEEDS["seeds"]
+        seed_hr_zones>hr_zones]
+        seed_sleep_wts>sleep_score_weights]
+    end
+
+    %% ---------------- Staging (views) ----------------
+    subgraph STG["analytics_staging (views)"]
+        stg_quantities
+        stg_categories
+        stg_workouts
+        stg_weather
+        stg_calendar
+    end
+
+    %% ---------------- Intermediate ----------------
+    subgraph INT["analytics_intermediate"]
+        int_workout_hr_samples
+        int_sleep_segments
+        int_sleep_periods
+    end
+
+    %% ---------------- Marts (tables) ----------------
+    subgraph MARTS["analytics_marts (tables)"]
+        mart_daily_rhr
+        mart_daily_hrv
+        mart_daily_vo2max
+        mart_daily_weight
+        mart_daily_context
+        mart_workout_zones
+        mart_workout_hrr
+        mart_monthly_aerobic_efficiency
+        mart_sleep_stages
+        mart_sleep_naps
+        mart_sleep_nights
+        mart_training_load
+        mart_recovery_state{{"★ mart_recovery_state<br/>PUBLIC API"}}
+        mart_daily_anomaly_bands
+        mart_daily_signals
+        mart_forecast_bands
+        mart_forecast_backtest
+    end
+
+    %% ---------------- Consumers (dbt exposures) ----------------
+    subgraph EXPO["consumers (exposures)"]
+        exp_weekly["weekly_health_review<br/>(skill)"]
+        exp_coach["daily_workout_coach<br/>(skill)"]
+        exp_forecast["forecast_page<br/>(11_forecast)"]
+    end
+
+    %% ---- source -> staging ----
+    src_quantities --> stg_quantities
+    src_categories --> stg_categories
+    src_workouts --> stg_workouts
+    src_weather --> stg_weather
+    src_calendar --> stg_calendar
+
+    %% ---- staging/seeds -> intermediate ----
+    stg_categories --> int_sleep_segments
+    int_sleep_segments --> int_sleep_periods
+    stg_quantities --> int_workout_hr_samples
+    stg_workouts --> int_workout_hr_samples
+    seed_hr_zones --> int_workout_hr_samples
+
+    %% ---- staging -> daily marts ----
+    stg_quantities --> mart_daily_rhr
+    stg_quantities --> mart_daily_hrv
+    stg_quantities --> mart_daily_vo2max
+    stg_quantities --> mart_daily_weight
+    stg_weather --> mart_daily_context
+    stg_calendar --> mart_daily_context
+
+    %% ---- intermediate/seeds -> workout & sleep marts ----
+    int_workout_hr_samples --> mart_workout_zones
+    int_workout_hr_samples --> mart_workout_hrr
+    stg_quantities --> mart_workout_hrr
+    stg_workouts --> mart_workout_hrr
+    int_workout_hr_samples --> mart_monthly_aerobic_efficiency
+    seed_hr_zones --> mart_monthly_aerobic_efficiency
+    int_sleep_segments --> mart_sleep_stages
+    int_sleep_periods --> mart_sleep_naps
+    int_sleep_periods --> mart_sleep_nights
+    seed_sleep_wts --> mart_sleep_nights
+
+    %% ---- mart -> mart (training load & the hub) ----
+    mart_workout_zones --> mart_training_load
+    mart_daily_rhr --> mart_recovery_state
+    mart_daily_hrv --> mart_recovery_state
+    mart_training_load --> mart_recovery_state
+
+    %% ---- derived marts off the daily/hub layer ----
+    mart_daily_rhr --> mart_daily_anomaly_bands
+    mart_daily_hrv --> mart_daily_anomaly_bands
+    mart_sleep_nights --> mart_daily_anomaly_bands
+    mart_recovery_state --> mart_daily_signals
+    mart_sleep_nights --> mart_daily_signals
+    mart_daily_rhr --> mart_forecast_bands
+    mart_daily_hrv --> mart_forecast_bands
+    mart_training_load --> mart_forecast_bands
+    mart_daily_rhr --> mart_forecast_backtest
+    mart_daily_hrv --> mart_forecast_backtest
+    mart_training_load --> mart_forecast_backtest
+
+    %% ---- marts -> consumers (exposures) ----
+    mart_recovery_state --> exp_weekly
+    mart_recovery_state --> exp_coach
+    mart_training_load --> exp_coach
+    mart_forecast_bands --> exp_forecast
+    mart_forecast_backtest --> exp_forecast
+
+    classDef api fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#000;
+    class mart_recovery_state api;
