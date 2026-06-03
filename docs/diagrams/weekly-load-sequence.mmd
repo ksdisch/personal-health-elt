@@ -1,0 +1,62 @@
+%% weekly_load orchestration — personal-health-elt
+%% The Prefect flow's end-to-end sequence: hash + load CSVs → enrich → dbt build
+%% (skipped when nothing new) → notify → Firestore feed. Authoritative:
+%% ingest/flows/weekly_load.py. Render: any Mermaid viewer, or GitHub ```mermaid.
+%% Maintenance: update when the flow's task order, skip logic, or consumers change.
+sequenceDiagram
+    autonumber
+    participant Cron as launchd + Prefect Cron (Sun 06:00 CT)
+    participant Flow as weekly_load flow
+    participant Load as batch loader
+    participant Enr as weather + calendar loaders
+    participant PG as Postgres (raw.*)
+    participant Dbt as dbt build
+    participant Notify as notifier
+    participant FS as Firestore (Tempo)
+    participant Push as Pushover
+
+    Note over Flow: @flow retries=1, retry_delay=120s (coarse net over per-task retries)
+
+    Cron->>Flow: trigger weekly_load()
+
+    Flow->>Load: load_drop_folder(RAW_DATA_PATH)
+    Note right of Load: @task retries=1, 30s
+    loop each new CSV in data/raw/
+        Load->>PG: SHA256 in file_inventory?
+        alt hash already present
+            PG-->>Load: skip file (no-op)
+        else new file
+            Load->>PG: INSERT rows ON CONFLICT DO NOTHING + file_inventory row (one txn)
+        end
+    end
+    Load-->>Flow: BatchResult (files_loaded, rows_inserted, errors)
+
+    Flow->>Enr: load_weather() then load_calendar()
+    Note right of Enr: non-fatal (try/except) — quiet skip if no API key / iCal URL
+    Enr->>PG: upsert raw.weather / raw.calendar_daily
+    Enr-->>Flow: WeatherResult / CalendarResult
+
+    alt files errored
+        Flow-->>Flow: log ERROR, SKIP dbt build (dbt_exit_code=None)
+    else 0 new rows (HK + weather + calendar)
+        Flow-->>Flow: log "no new rows", SKIP dbt build
+    else new data present
+        Flow->>Dbt: run_dbt_build()  (subprocess)
+        Note right of Dbt: @task retries=2, 60s — logs stderr tail, raises DbtBuildError on non-zero
+        Dbt->>PG: rebuild analytics_staging → intermediate → marts + run all tests
+        Dbt-->>Flow: exit 0
+    end
+
+    Flow->>Notify: notify_state_changes()
+    Note right of Notify: non-fatal — reads mart_recovery_state — dedup via notification_log (rule_name, day) PK
+    Notify->>PG: read mart + claim (rule, day) row
+    Notify->>Push: send (only if rule fired today)
+    Notify-->>Flow: NotifyResult (sent, deduped)
+
+    Flow->>FS: push_recovery_state_to_tempo()
+    Note right of FS: non-fatal — runs last (needs fresh mart) — quiet skip if Tempo env unset
+    FS->>PG: read trailing 14d of mart_recovery_state
+    FS->>FS: write users/{uid}/recovery_state/{latest,history}
+    FS-->>Flow: PushResult (rows_fetched, skipped)
+
+    Flow-->>Cron: summary dict (counts, dbt_exit_code, notifications, tempo)
