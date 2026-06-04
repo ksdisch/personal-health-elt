@@ -1,6 +1,12 @@
 # Canonical Engineering Artifacts — Audit & Generation Plan
 
 ## Changelog
+- 2026-06-04: Generated forecasting design doc at `docs/design/forecasting-marts.md` (Holt's method + backtest; implementation companion to ADR-0006). Status: 🟡 → ✅.
+- 2026-06-04: Generated CONTRIBUTING.md at `CONTRIBUTING.md` (1-screen dev loop + git workflow + load-bearing conventions). Status: 🟡 → ✅.
+- 2026-06-04: Generated data-freshness SLO note at `docs/reliability/slos.md` (formalizes the dbt source-freshness warn-2d/error-7d config as an SLI/SLO). Status: 🟡 → ✅.
+- 2026-06-04: Generated SECURITY.md at `SECURITY.md` (trust boundary, gitignored secrets, opt-in outbound-data surface, private-advisory reporting). Status: 🟡 → ✅.
+- 2026-06-04: Generated justfile at `justfile` (15 recipes wrapping the documented uv/dbt commands; validated via `just --list`). Status: 🟢 → ✅.
+- 2026-06-04: Generated per-scenario playbook at `docs/playbooks/export-didnt-sync.md` (export-didn't-sync-from-iCloud). Status: 🟡 → ✅. **Tier-3 docs substantially complete — only the PR template remains (it lives in `.github/`, a code change out of artifacts-generate scope).**
 - 2026-06-03: Generated ROADMAP.md at `ROADMAP.md` (now/next/later forward narrative restructured from BACKLOG.md; BACKLOG kept as the detailed live backlog and cross-linked per item). Status: 🟢 → ✅.
 - 2026-06-03: Generated postmortem template at `docs/postmortems/TEMPLATE.md` (adapted to a single-user data-pipeline severity scale S1–S3 + a pipeline-specific "Data-integrity verification" section). Status: 🟢 → ✅.
 - 2026-06-03: Generated flow-failure runbook at `docs/runbooks/weekly-load-failure.md` (key message: re-running `weekly_load` is safe — idempotent loaders; also documents the real detection signals and the no-alert-on-flow-failure gap). Status: 🟢 → ✅. **This completes Tier-2.**
@@ -73,18 +79,18 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | `.env.example` | ✅ PRESENT | Tracked; documents all Postgres + optional vars (OpenWeather, Calendar, Pushover, Anthropic, Tempo Firebase). **Open question:** a `.env` also exists at repo root — confirm it is gitignored and uncommitted (not part of this audit's scope to change). |
 | `CHANGELOG.md` | ✅ PRESENT | Generated `CHANGELOG.md` (Keep a Changelog + SemVer), backfilled `v0.1.0`/`v0.2.0`/`v0.3.0` from PR history #1–#33. 30 merged PRs (#1–#30), **zero git tags**, no release history. Portfolio reviewers read a changelog as a velocity signal; the existing conventional-commit style (`feat/fix/refactor/test/docs/chore/ci`) makes it semi-automatable. |
 | PR template | 🟢 RECOMMENDED | Clear PR-numbered workflow exists (#1–#30) but `.github/` holds **only** `ci.yml` — a `PULL_REQUEST_TEMPLATE.md` standardizes the description shape for the portfolio audience. |
-| `justfile` | 🟢 RECOMMENDED (light) | Run commands are long (`uv run dbt build --project-dir transform --profiles-dir transform`) and live only in CLAUDE.md prose; a `justfile` wrapping them reads well to reviewers and removes copy-paste friction. |
-| `CONTRIBUTING.md` | 🟡 OPTIONAL | Solo repo, but the cheapest portfolio credibility add — a 1-screen "dev loop / how to run tests" liftable from README's command section. |
+| `justfile` | ✅ PRESENT (`justfile`) | Run commands are long (`uv run dbt build --project-dir transform --profiles-dir transform`) and live only in CLAUDE.md prose; a `justfile` wrapping them reads well to reviewers and removes copy-paste friction. |
+| `CONTRIBUTING.md` | ✅ PRESENT | Solo repo, but the cheapest portfolio credibility add — a 1-screen "dev loop / how to run tests" liftable from README's command section. |
 | Issue templates | 🟡 OPTIONAL | Low value for a solo repo with no external issue flow. |
 | `CODE_OF_CONDUCT.md` | 🟡 OPTIONAL | Only relevant if opening to outside contributors; no signal of that today. |
-| `SECURITY.md` | 🟡 OPTIONAL | Handles personal health data routed through iCloud (per automation.md); a short data-handling/trust-boundary note has mild portfolio value but low urgency for a single user. |
+| `SECURITY.md` | ✅ PRESENT | Handles personal health data routed through iCloud (per automation.md); a short data-handling/trust-boundary note has mild portfolio value but low urgency for a single user. |
 
 ### Decision & design
 
 | Artifact | Status | Justification |
 |---|---|---|
 | ADRs | ✅ PRESENT | Generated `docs/adr/0001`–`0007` (+ index `docs/adr/README.md`), all Accepted. Several **hard-to-reverse** decisions live only as CLAUDE.md prose and deserve numbered, append-only records — strong Data-Eng portfolio signal: (1) **UTC→America/Chicago at staging only**; (2) **multi-source dedup priority** Apple Watch > iPhone > 3rd-party via `row_number()`; (3) **two-level idempotency** (SHA file ledger + row-level `ON CONFLICT`, single transaction); (4) **self-hosted Prefect over GHA/launchd** (data locality — see automation.md rationale); (5) **`mart_recovery_state` as a versioned public API** with lockstep consumers; (6) **pure-SQL Holt's-method forecasting** (#28) instead of a Python ML dep; (7) **dbt-1.8 nested `accepted_values`** contract form. |
-| Design Doc / RFC / Tech Spec | 🟡 OPTIONAL | Most features already shipped, so retroactive specs are lower-leverage than ADRs. The one genuine candidate: a short design doc for the **Holt's-method forecasting marts** (`mart_forecast_bands`/`mart_forecast_backtest` + `holt_forecast` macro), since the math/backtest design isn't obvious from SQL. |
+| Design Doc / RFC / Tech Spec | ✅ PRESENT (`docs/design/forecasting-marts.md`) | Most features already shipped, so retroactive specs are lower-leverage than ADRs. The one genuine candidate: a short design doc for the **Holt's-method forecasting marts** (`mart_forecast_bands`/`mart_forecast_backtest` + `holt_forecast` macro), since the math/backtest design isn't obvious from SQL. |
 | PRD | ⛔ NOT APPLICABLE | Single-user personal tool; the "product" is the maintainer. README's "What this demonstrates" already covers the why. |
 | Postmortem / RCA (instances) | ⛔ N/A (yet) | No incidents recorded. The **template** is recommended (see Ops). |
 
@@ -120,8 +126,8 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | Runbook (cold-start / cloud deploy) | ✅ PRESENT | `docs/DEPLOYMENT.md` (236 ln) — managed-Postgres provisioning, cold-start import, deploy targets, troubleshooting. |
 | Runbook (flow-failure re-run) | ✅ PRESENT (`docs/runbooks/weekly-load-failure.md`) | The flow already emits structured ERROR alerts + Pushover (#8, #23) and is laptop-bound (known tradeoff). A short "weekly_load failed / laptop asleep → how to re-run safely" runbook closes the loop (loaders are idempotent, so safe to re-run). |
 | Postmortem template | ✅ PRESENT (`docs/postmortems/TEMPLATE.md`) | Cheap, and there are real failure surfaces (scheduled flow on a sleeping laptop, notification pipeline, dbt build drift). Gives a home for the first incident write-up. |
-| Playbook (per-scenario) | 🟡 OPTIONAL | E.g. "export didn't sync from iCloud", "dbt build failed mid-flow" — useful but lower priority under portfolio-first weighting. |
-| SLI / SLO / SLA | 🟡 OPTIONAL | No external SLA (single user). But `dbt source freshness` is already configured (#5) — that's a ready-made **freshness SLI**; a light "data ≤7 days fresh" SLO note would formalize it. |
+| Playbook (per-scenario) | ✅ PRESENT (`docs/playbooks/export-didnt-sync.md`) | E.g. "export didn't sync from iCloud", "dbt build failed mid-flow" — useful but lower priority under portfolio-first weighting. |
+| SLI / SLO / SLA | ✅ PRESENT (`docs/reliability/slos.md`) | No external SLA (single user). But `dbt source freshness` is already configured (#5) — that's a ready-made **freshness SLI**; a light "data ≤7 days fresh" SLO note would formalize it. |
 | On-call / escalation | ⛔ NOT APPLICABLE | Solo; "escalation" is a Pushover notification to the one user. |
 
 ### Knowledge
@@ -129,7 +135,7 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | Artifact | Status | Justification |
 |---|---|---|
 | **Data dictionary** | 🟢 RECOMMENDED (**top priority**) | Confirmed scope: document `mart_recovery_state` columns + the `recovery_signal` enum + the Firestore doc shape (`users/{uid}/recovery_state/{latest,history}`), plus a catalog of the 17 marts and 7 raw tables. Today the contract lives **only** in `schema.yml` dbt tests (`accepted_values` + `unique(day)`) — invisible to the 3 consumers as human-readable docs. |
-| Glossary | 🟡 OPTIONAL | Heavy domain jargon (ACWR, TRIMP, Zone 2, HRV SDNN, HRR, hypnogram, `recovery_signal`). Best folded in as a section of the data dictionary rather than a standalone file. |
+| Glossary | ✅ FOLDED (into the data dictionary) | Heavy domain jargon (ACWR, TRIMP, Zone 2, HRV SDNN, HRR, hypnogram, `recovery_signal`). Best folded in as a section of the data dictionary rather than a standalone file. |
 | Onboarding doc | 🟡 OPTIONAL | CLAUDE.md + README already serve the solo author + AI sessions; a separate onboarding doc would be redundant. |
 | API docs (OpenAPI/Swagger) | ⛔ NOT APPLICABLE | No HTTP API. The de-facto API is the mart contract — covered by the data dictionary. |
 | Wiki | ⛔ NOT APPLICABLE | In-repo `docs/` suffices for a solo repo. |
@@ -164,11 +170,11 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 
 | # | Artifact |
 |---|---|
-| 11 | `justfile` (wrap the documented `uv`/dbt commands) |
-| 12 | PR template |
-| 13 | Forecasting design doc (Holt's method + backtest) |
-| 14 | CONTRIBUTING.md (1-screen dev loop) · Glossary (folded into data dictionary) |
-| 15 | SLI/SLO freshness note · per-scenario playbook · SECURITY.md |
+| 11 | ✅ `justfile` (`justfile`) — done |
+| 12 | PR template — **deferred** (lives in `.github/`, out of artifacts-generate scope; track as a separate code task) |
+| 13 | ✅ Forecasting design doc (`docs/design/forecasting-marts.md`) — done |
+| 14 | ✅ CONTRIBUTING.md (`CONTRIBUTING.md`) — done · Glossary folded into the data dictionary (done) |
+| 15 | ✅ SLI/SLO freshness note (`docs/reliability/slos.md`) · ✅ per-scenario playbook (`docs/playbooks/export-didnt-sync.md`) · ✅ SECURITY.md (`SECURITY.md`) — done |
 
 ### 2. Per-artifact spec
 
