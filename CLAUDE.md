@@ -136,6 +136,12 @@ orchestrator MAY fan out to multiple parallel `Agent` calls. The
 orchestrator coordinates only — it does not run shell, edit files, or
 read code directly. Every concrete action is dispatched.
 
+> **Mode note:** the "coordinates only" rule is the §3.2 high-oversight
+> dispatch mode. Autonomous runs use §3.1 — a single session plans, builds,
+> tests, and opens a PR directly, with no mandatory dispatch ceremony. See
+> §3 and §4 of `.claude/orchestrator-prompt.md` for the full mode rules and
+> precedence. Invariants (§1) and gates (§2) apply in both modes.
+
 ## Conventions for subagents (every worker inherits these)
 
 - **Stay in scope.** Edit ONLY the files listed under "Files in scope" in
