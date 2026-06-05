@@ -142,6 +142,55 @@ read code directly. Every concrete action is dispatched.
 > §3 and §4 of `.claude/orchestrator-prompt.md` for the full mode rules and
 > precedence. Invariants (§1) and gates (§2) apply in both modes.
 
+## Claude tooling for this repo
+
+Repo-local slash commands (`.claude/commands/`) and skills (`.claude/skills/`)
+vendored here so they work in cloud/web sessions and for collaborators — not
+just in a local session that has them globally. All listed below are
+**cloud-safe** (pure reasoning + repo edits).
+
+Commands (invoke as `/<name>`):
+
+- `/begin` — open a session: orient on branch/commits/PRs, recap last `/wrap`,
+  route into the session-start flow.
+- `/wrap` — end-of-session recap + vocabulary + active-recall quiz, saved to a
+  dated file.
+- `/handoff` — generate a paste-ready prompt to continue work in a fresh
+  session with no context loss.
+- `/explore-plan` — explore → plan → confirm before any code; proposes 2–3
+  ranked approaches and waits for approval.
+- `/tdd` — test-first loop: write failing tests → commit → implement without
+  modifying the tests.
+- `/autonomous-milestone` — plan/build/test/verify a target end-to-end (or
+  triage the backlog → build); uses ultracode multi-agent orchestration.
+- `/trim-context` — find and fix CLAUDE.md + memory token bloat against the
+  40k-char limit.
+
+Skills:
+
+- `/new-loader` — *(user-invocable)* scaffold a new idempotent HK loader under
+  `ingest/loaders/`, pre-wired to the two-level idempotency contract + the
+  dedup-at-staging rule. Walks the five wiring points (loader, batch dispatch,
+  raw DDL, staging model, pytest).
+- `artifacts-audit` — *(auto-triggers)* audit the repo for missing engineering
+  artifacts (READMEs, ADRs, ERDs, runbooks) → `docs/artifacts-plan.md`. Plans only.
+- `artifacts-generate` — *(auto-triggers)* generate artifacts from that plan.
+  Companion to `artifacts-audit`; does not modify source code.
+
+Hooks (`.claude/settings.json` → scripts in `.claude/hooks/`):
+
+- **`guard-mart-contract.sh`** (`PreToolUse` on Edit/Write) — *denies* direct
+  edits to `mart_recovery_state.sql` (the off-limits public-API model) and
+  *asks* for confirmation on `marts/schema.yml` (holds the contract tests).
+  Bypass only with explicit authorization by editing `.claude/settings.json`.
+- **`guard-git-add.sh`** (`PreToolUse` on Bash) — *denies* `git add -A` /
+  `git add .` / `git add --all` so `.env`, `data/raw/*.csv`, and
+  `transform/target/` can't be staged accidentally.
+
+Subagent added for this contract surface: **`mart-contract-reviewer`** — a
+read-only auditor (see `.claude/agents/`) that checks any `mart_recovery_state`
+change keeps both downstream consumers and the dbt tests in lockstep.
+
 ## Conventions for subagents (every worker inherits these)
 
 - **Stay in scope.** Edit ONLY the files listed under "Files in scope" in
