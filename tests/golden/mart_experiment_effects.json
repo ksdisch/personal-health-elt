@@ -1,0 +1,46 @@
+{
+  "mart": "mart_experiment_effects",
+  "columns": [
+    "experiment_name",
+    "target_metric",
+    "hypothesis",
+    "start_date",
+    "end_date",
+    "cutoff_date",
+    "n_pre",
+    "n_post",
+    "confounded",
+    "verdict"
+  ],
+  "order_by": [
+    "experiment_name",
+    "target_metric"
+  ],
+  "row_count": 2,
+  "rows": [
+    [
+      "cold_plunge",
+      "rhr_bpm",
+      "Morning cold plunge lowers resting heart rate",
+      "2024-04-01",
+      "2024-04-20",
+      "2024-04-01",
+      28,
+      20,
+      false,
+      "no_clear_effect"
+    ],
+    [
+      "magnesium_glycinate",
+      "rhr_bpm",
+      "Evening magnesium glycinate lowers resting heart rate",
+      "2024-02-15",
+      "2024-03-15",
+      "2024-02-15",
+      28,
+      30,
+      false,
+      "likely_decrease"
+    ]
+  ]
+}

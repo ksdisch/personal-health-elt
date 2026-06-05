@@ -1,0 +1,69 @@
+version: 2
+
+# dbt 1.8+ unit tests — isolated SQL branch coverage for the branchiest mart
+# logic, with mocked inputs (no warehouse data needed). Complements the
+# golden-snapshot regression tests (which freeze full mart output over the
+# synthetic corpus): unit tests pin the BRANCH logic; goldens pin the OUTPUT.
+
+unit_tests:
+  - name: recovery_signal_covers_all_branches
+    description: >
+      Drives mart_recovery_state through every recovery_signal branch with a
+      hand-built 11-day series. acwr and training_load are supplied directly via
+      the mart_training_load input; hrv_ms drives the 7-day-prior trend window.
+      This is the flagship public-API mart's first isolated branch coverage.
+    model: mart_recovery_state
+    given:
+      - input: ref('mart_daily_rhr')
+        rows:
+          - {day: "2024-01-01", resting_heart_rate: 50}
+          - {day: "2024-01-02", resting_heart_rate: 50}
+          - {day: "2024-01-03", resting_heart_rate: 50}
+          - {day: "2024-01-04", resting_heart_rate: 50}
+          - {day: "2024-01-05", resting_heart_rate: 50}
+          - {day: "2024-01-06", resting_heart_rate: 50}
+          - {day: "2024-01-07", resting_heart_rate: 50}
+          - {day: "2024-01-08", resting_heart_rate: 50}
+          - {day: "2024-01-09", resting_heart_rate: 50}
+          - {day: "2024-01-10", resting_heart_rate: 50}
+          - {day: "2024-01-11", resting_heart_rate: 50}
+      - input: ref('mart_daily_hrv')
+        # constant 100 builds a stable 7-day-prior baseline; days 9-11 deviate.
+        rows:
+          - {day: "2024-01-01", hrv_ms: 100}
+          - {day: "2024-01-02", hrv_ms: 100}
+          - {day: "2024-01-03", hrv_ms: 100}
+          - {day: "2024-01-04", hrv_ms: 100}
+          - {day: "2024-01-05", hrv_ms: 100}
+          - {day: "2024-01-06", hrv_ms: 100}
+          - {day: "2024-01-07", hrv_ms: 100}
+          - {day: "2024-01-08", hrv_ms: 100}
+          - {day: "2024-01-09", hrv_ms: 80}   # < 0.85 x 100 prior -> strained (hrv)
+          - {day: "2024-01-10", hrv_ms: 100}  # acwr>1.5 takes precedence -> strained
+          - {day: "2024-01-11", hrv_ms: 100}  # acwr 1.4 (outside sweet spot) -> neutral
+      - input: ref('mart_training_load')
+        rows:
+          - {day: "2024-01-01", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-02", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-03", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-04", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-05", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-06", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-07", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-08", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-09", acwr: 1.0, training_load: 50}
+          - {day: "2024-01-10", acwr: 2.0, training_load: 50}  # > 1.5 -> strained
+          - {day: "2024-01-11", acwr: 1.4, training_load: 50}  # 1.3 < acwr <= 1.5 -> neutral
+    expect:
+      rows:
+        - {day: "2024-01-01", recovery_signal: "insufficient_data"}  # no prior hrv avg
+        - {day: "2024-01-02", recovery_signal: "well_recovered"}
+        - {day: "2024-01-03", recovery_signal: "well_recovered"}
+        - {day: "2024-01-04", recovery_signal: "well_recovered"}
+        - {day: "2024-01-05", recovery_signal: "well_recovered"}
+        - {day: "2024-01-06", recovery_signal: "well_recovered"}
+        - {day: "2024-01-07", recovery_signal: "well_recovered"}
+        - {day: "2024-01-08", recovery_signal: "well_recovered"}
+        - {day: "2024-01-09", recovery_signal: "strained"}
+        - {day: "2024-01-10", recovery_signal: "strained"}
+        - {day: "2024-01-11", recovery_signal: "neutral"}

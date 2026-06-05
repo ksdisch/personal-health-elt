@@ -29,6 +29,13 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 MANIFEST_PATH = _REPO_ROOT / "transform" / "target" / "manifest.json"
 MART_SCHEMA = "analytics_marts"
 
+# Mirror of ingest.analysis.causal.METRIC_SOURCES — kept local so the Streamlit
+# import path doesn't pull in statsmodels just for this two-entry map.
+_EXPERIMENT_METRIC_SOURCE = {
+    "rhr_bpm": ("mart_daily_rhr", "resting_heart_rate"),
+    "hrv_ms": ("mart_daily_hrv", "hrv_ms"),
+}
+
 
 @st.cache_resource
 def _engine() -> Engine:
@@ -62,6 +69,28 @@ def daily_hrv() -> pd.DataFrame:
     return _daily_mart(
         "SELECT day, hrv_ms, sample_count FROM analytics_marts.mart_daily_hrv ORDER BY day"
     )
+
+
+@st.cache_data(ttl=300)
+def experiment_effects() -> pd.DataFrame:
+    """Causal-inference results: one row per (experiment, target metric)."""
+    return pd.read_sql(
+        "SELECT * FROM analytics_marts.mart_experiment_effects "
+        "ORDER BY experiment_name, target_metric",
+        _engine(),
+        parse_dates=["start_date", "end_date", "cutoff_date"],
+    )
+
+
+@st.cache_data(ttl=300)
+def experiment_metric_series(metric: str, start: str, end: str) -> pd.DataFrame:
+    """Daily values for one metric over [start, end] — to draw the ITS fit."""
+    mart, col = _EXPERIMENT_METRIC_SOURCE[metric]
+    sql = text(
+        f"SELECT day, {col} AS value FROM analytics_marts.{mart} "
+        f"WHERE day >= :a AND day <= :b AND {col} IS NOT NULL ORDER BY day"
+    )
+    return pd.read_sql(sql, _engine(), params={"a": start, "b": end}, parse_dates=["day"])
 
 
 @st.cache_data(ttl=300)

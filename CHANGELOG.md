@@ -11,11 +11,35 @@ they group work by narrative arc rather than by release event.
 ## [Unreleased]
 
 ### Added
+- **Synthetic-warehouse autonomy substrate** — `ingest/synth` generates a
+  deterministic, scenario-driven Apple-Health corpus the real loaders ingest
+  unchanged, and `ingest/flows/make_demo_db` stands up the entire warehouse in an
+  isolated `health_demo` DB (explicit-engine + `/health_demo` hard guard, pinned by
+  `tests/test_demo_db_safety.py`) with **zero iOS export and zero credentials**.
+- **Warehouse regression testing** — committed golden-snapshot tests for 9 marts
+  (`tests/test_golden_marts.py`, `tests/golden/*.json`, `UPDATE_GOLDEN=1` to
+  re-baseline), the flagship mart's first dbt 1.8+ **unit test** over every
+  `recovery_signal` branch, and a CI **real-data gate** that builds the synthetic
+  warehouse and runs the contract/unit/golden tests on populated tables.
+- **Causal-Inference Lab** — `ingest/analysis/causal.py` (interrupted time series
+  with Newey-West HAC errors, permutation/placebo p-values, difference-in-
+  differences) → `raw.experiment_effects` → `stg_experiment_effects` →
+  `mart_experiment_effects` (grain + `accepted_values` tests), an `experiments`
+  seed, and the `13_experiments` Streamlit page. Validated by recovering a known
+  effect *planted* in synthetic data (`tests/test_causal.py`).
+- ADRs `0008` (statsmodels for causal inference, scoped exception to ADR-0006) and
+  `0009` (Python results re-enter via raw→staging→mart); `docs/design/autonomous-build-plan.md`.
 - Architecture Decision Records `docs/adr/0001`–`0007` capturing the seven
   hard-to-reverse decisions (TZ-at-staging, dedup priority, two-level idempotency,
   self-hosted Prefect, the `mart_recovery_state` public-API contract, pure-SQL
   Holt's forecasting, dbt-1.8 nested `accepted_values`), plus a `docs/adr/` index.
 - `CHANGELOG.md` (this file), backfilled from PR history.
+
+### Migration
+- `scripts/init_raw_schema.sql` adds `raw.experiment_effects`. It is idempotent and
+  purely additive (`CREATE TABLE IF NOT EXISTS`); apply it to an existing local
+  `health` database before the next `dbt build`:
+  `docker exec -i health_postgres psql -U health -d health < scripts/init_raw_schema.sql`.
 
 ## [0.3.0] - 2026-06-01
 

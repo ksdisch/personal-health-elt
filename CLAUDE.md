@@ -31,7 +31,8 @@ so code quality, README polish, and dbt conventions are part of the product.
 ## Directory map
 
 - `ingest/` — Python package. Config, file inventory, loaders (quantities,
-  categories, workouts), Prefect flows.
+  categories, workouts), Prefect flows. Also `synth/` (deterministic synthetic
+  corpus generator) and `analysis/causal.py` (the causal-inference engine).
 - `transform/` — dbt project root. Staging / intermediate / marts models,
   seeds, tests, macros.
 - `app/` — Streamlit app. `home.py` + numbered pages under `pages/`.
@@ -102,6 +103,11 @@ uv run dbt build --project-dir transform \
   --profiles-dir transform                           # run all models + tests
 uv run streamlit run app/home.py                     # launch app
 uv run python -m ingest.flows.weekly_load            # run the ingest flow
+uv run python -m ingest.flows.make_demo_db           # build the synthetic
+                                                     # health_demo warehouse
+                                                     # (no real data / creds);
+                                                     # then: UPDATE_GOLDEN=1 uv run
+                                                     # pytest tests/test_golden_marts.py
 ```
 
 ## Git workflow

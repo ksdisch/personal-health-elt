@@ -29,6 +29,15 @@ sources:
         # be empty (no API key configured) — an empty table would otherwise
         # trip the source-level "no rows returned" error.
         freshness: null
+      - name: experiment_effects
+        description: >
+          Personal causal-inference estimates (ITS level change with HAC errors,
+          permutation p-value, difference-in-differences) computed by
+          ingest/analysis/causal.py and read by stg_experiment_effects ->
+          mart_experiment_effects. Optional — empty until the causal step runs.
+        # Freshness disabled: computed table that may be empty (no experiments
+        # logged / causal step not yet run).
+        freshness: null
       - name: calendar_daily
         description: >
           Daily Google Calendar density (timed event count / hours /
