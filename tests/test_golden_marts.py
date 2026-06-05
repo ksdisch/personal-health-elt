@@ -46,6 +46,7 @@ GOLDEN_MARTS: dict[str, dict] = {
     "mart_daily_weight": {"order_by": ["day"], "exclude": []},
     "mart_training_load": {"order_by": ["day"], "exclude": []},
     "mart_daily_signals": {"order_by": ["day"], "exclude": ["is_today"]},
+    "mart_daily_context": {"order_by": ["day"], "exclude": []},
     "mart_workout_zones": {"order_by": ["start_ts_local"], "exclude": []},
     # The causal mart's continuous columns come from host-side numpy/statsmodels,
     # whose last-digit results can differ across BLAS backends (macOS vs CI Linux).

@@ -500,11 +500,12 @@ models:
 
   - name: mart_daily_context
     description: >
-      External-context mart. One row per local day with weather columns
-      (and future calendar density / Oura / HomeKit columns). Joined to
-      mart_recovery_state on `day` for correlation analysis on page 09.
-      Distinct from mart_recovery_state so the public API of the latter
-      stays focused on internal health signals.
+      External-context mart. One row per local day with weather columns,
+      calendar density columns, and derived schedule-load signals
+      (and future Oura / HomeKit columns). Joined to mart_recovery_state
+      on `day` for correlation analysis on page 09. Distinct from
+      mart_recovery_state so the public API of the latter stays focused
+      on internal health signals.
     columns:
       - name: day
         description: Calendar date.
@@ -543,6 +544,23 @@ models:
         description: Earliest timed-event start (local). NULL on days with no timed events.
       - name: last_event_local
         description: Latest timed-event end (local). NULL on days with no timed events.
+      - name: meeting_span_hours
+        description: >
+          Wall-clock hours from the first timed event's start to the last
+          event's end. NULL on days with 0 or 1 timed events (no span).
+      - name: meeting_density
+        description: >
+          Share of the meeting span actually spent in meetings
+          (timed_event_hours / meeting_span_hours) — a back-to-back proxy.
+          ~1.0 means a packed day; low means meetings spread across the day.
+          Can exceed 1.0 when events overlap. NULL when there is no span.
+      - name: is_high_meeting_day
+        description: >
+          TRUE when the day has 5 or more timed events — the "5+ back-to-back
+          meetings" question, encoded as a boolean predictor. Never NULL
+          (derived from a coalesced count).
+        tests:
+          - not_null
 
   - name: mart_forecast_bands
     description: >
