@@ -8,9 +8,12 @@ a star annotation.
 
 Why this page exists. Line charts and heatmaps tell you what happened.
 This grid tells you what *moved* what — which inputs are the actual levers
-and which are noise. Sleep duration is the most-anticipated row here and
-will appear once ingest/loaders/categories.py is implemented and a
-mart_daily_sleep is built.
+and which are noise.
+
+Two more grids sit under "Recovery vs. external factors": yesterday's
+weather and yesterday's schedule load (calendar density) against today's
+recovery — the "did 5 back-to-back meetings tank my HRV?" question,
+answered from mart_daily_context.
 
 Significance test. We use the normal approximation: |r| > 1.96/sqrt(n).
 Good enough for n ≥ 30 (our regime); avoids a scipy dependency.
@@ -97,78 +100,119 @@ def _two_tailed_p(r: float, n: int) -> float:
     return float(erfc(abs(t) / sqrt(2)))
 
 
-# ---------------------------------------------------- compute correlations
-rows = []
-for lead_col, lead_label in LEADING.items():
-    for out_col, out_label in OUTCOMES.items():
-        sub = df[[lead_col, out_col]].dropna()
-        n = len(sub)
-        if n < 5:
-            r = np.nan
-            p = np.nan
-        else:
-            r = float(sub[lead_col].corr(sub[out_col]))
-            p = _two_tailed_p(r, n)
-        rows.append(
-            {
-                "lead": lead_label,
-                "outcome": out_label,
-                "r": r,
-                "n": n,
-                "p": p,
-                "sig": not pd.isna(p) and p < 0.05,
-                "label": (
-                    f"{r:+.2f}{'★' if (not pd.isna(p) and p < 0.05) else ''}"
-                    if not pd.isna(r)
-                    else "—"
-                ),
-            }
+# ----------------------------------------------------- correlation helpers
+def _corr_rows(
+    frame: pd.DataFrame,
+    leading: dict[str, str],
+    outcomes: dict[str, str],
+    *,
+    min_n: int = 5,
+) -> pd.DataFrame:
+    """Pearson r + normal-approx p for every (leading, outcome) pair.
+
+    Returns a tidy frame (lead, outcome, r, n, p, sig, label) with lead
+    and outcome as ordered Categoricals so chart axes stay stable. Pairs
+    with fewer than ``min_n`` overlapping days render as "—".
+    """
+    out_rows = []
+    for lead_col, lead_label in leading.items():
+        for out_col, out_label in outcomes.items():
+            sub = frame[[lead_col, out_col]].dropna()
+            n = len(sub)
+            if n < min_n:
+                r = np.nan
+                p = np.nan
+            else:
+                r = float(sub[lead_col].corr(sub[out_col]))
+                p = _two_tailed_p(r, n)
+            sig = not pd.isna(p) and p < 0.05
+            out_rows.append(
+                {
+                    "lead": lead_label,
+                    "outcome": out_label,
+                    "r": r,
+                    "n": n,
+                    "p": p,
+                    "sig": sig,
+                    "label": f"{r:+.2f}{'★' if sig else ''}" if not pd.isna(r) else "—",
+                }
+            )
+    out = pd.DataFrame(out_rows)
+    out["lead"] = pd.Categorical(out["lead"], categories=list(leading.values()), ordered=True)
+    out["outcome"] = pd.Categorical(
+        out["outcome"], categories=list(outcomes.values()), ordered=True
+    )
+    return out
+
+
+def _corr_heatmap(
+    corr_df: pd.DataFrame,
+    leading: dict[str, str],
+    outcomes: dict[str, str],
+    *,
+    height: int,
+) -> alt.LayerChart:
+    """Red-blue Pearson-r heatmap with bold ``+r★`` text labels."""
+    heat = (
+        alt.Chart(corr_df)
+        .mark_rect(stroke="white", strokeWidth=1)
+        .encode(
+            x=alt.X("outcome:N", title=None, sort=list(outcomes.values())),
+            y=alt.Y("lead:N", title=None, sort=list(leading.values())),
+            color=alt.Color(
+                "r:Q",
+                scale=alt.Scale(scheme="redblue", domain=[-1, 1], reverse=True),
+                legend=alt.Legend(title="Pearson r", orient="bottom"),
+            ),
+            tooltip=[
+                alt.Tooltip("lead:N", title="Leading indicator"),
+                alt.Tooltip("outcome:N", title="Outcome"),
+                alt.Tooltip("r:Q", title="Pearson r", format="+.3f"),
+                alt.Tooltip("n:Q", title="n (paired days)"),
+                alt.Tooltip("p:Q", title="p (normal approx)", format=".4f"),
+            ],
         )
+    )
+    text = (
+        alt.Chart(corr_df)
+        .mark_text(fontSize=14, fontWeight="bold")
+        .encode(
+            x="outcome:N",
+            y="lead:N",
+            text="label:N",
+            color=alt.condition("abs(datum.r) > 0.5", alt.value("white"), alt.value("#1e293b")),
+        )
+    )
+    return (heat + text).properties(height=height)
 
-corr_df = pd.DataFrame(rows)
 
-# Preserve row/column order for visual stability
-corr_df["lead"] = pd.Categorical(corr_df["lead"], categories=list(LEADING.values()), ordered=True)
-corr_df["outcome"] = pd.Categorical(
-    corr_df["outcome"], categories=list(OUTCOMES.values()), ordered=True
-)
+def _external_grid(
+    frame: pd.DataFrame,
+    leading: dict[str, str],
+    outcomes: dict[str, str],
+    *,
+    height: int,
+    empty_msg: str,
+    caption: str | None = None,
+) -> None:
+    """Render one external-factor correlation grid, or an info card if empty."""
+    corr = _corr_rows(frame, leading, outcomes)
+    if corr["r"].isna().all():
+        st.info(empty_msg)
+        return
+    st.altair_chart(_corr_heatmap(corr, leading, outcomes, height=height), use_container_width=True)
+    if caption:
+        st.caption(caption)
+
+
+# ---------------------------------------------------- compute correlations
+corr_df = _corr_rows(df, LEADING, OUTCOMES)
 
 # ---------------------------------------------------------------- heatmap
-heat = (
-    alt.Chart(corr_df)
-    .mark_rect(stroke="white", strokeWidth=1)
-    .encode(
-        x=alt.X("outcome:N", title=None, sort=list(OUTCOMES.values())),
-        y=alt.Y("lead:N", title=None, sort=list(LEADING.values())),
-        color=alt.Color(
-            "r:Q",
-            scale=alt.Scale(
-                scheme="redblue",
-                domain=[-1, 1],
-                reverse=True,
-            ),
-            legend=alt.Legend(title="Pearson r", orient="bottom"),
-        ),
-        tooltip=[
-            alt.Tooltip("lead:N", title="Leading indicator"),
-            alt.Tooltip("outcome:N", title="Outcome"),
-            alt.Tooltip("r:Q", title="Pearson r", format="+.3f"),
-            alt.Tooltip("n:Q", title="n (paired days)"),
-            alt.Tooltip("p:Q", title="p (normal approx)", format=".4f"),
-        ],
-    )
+st.altair_chart(
+    _corr_heatmap(corr_df, LEADING, OUTCOMES, height=300),
+    use_container_width=True,
 )
-text = (
-    alt.Chart(corr_df)
-    .mark_text(fontSize=14, fontWeight="bold")
-    .encode(
-        x="outcome:N",
-        y="lead:N",
-        text="label:N",
-        color=alt.condition("abs(datum.r) > 0.5", alt.value("white"), alt.value("#1e293b")),
-    )
-)
-st.altair_chart((heat + text).properties(height=300), use_container_width=True)
 
 # ---------------------------------------------------------------- key takeaways
 st.subheader("Strongest signals in this window")
@@ -202,60 +246,39 @@ st.dataframe(
 # Recovery vs. external factors
 # ====================================================================
 #
-# Yesterday's weather predicting today's outcomes. The natural-question
-# framing: "did the hot night tank my HRV?" / "do I sleep worse on humid
-# nights?" Same lag structure as the main heatmap above (day D predictor
-# → day D+1 outcome) so the two grids compose intuitively.
+# Yesterday's weather and yesterday's schedule load (calendar density)
+# predicting today's recovery outcomes. Same lag structure as the main
+# heatmap (day D predictor → day D+1 outcome), split into two sub-grids
+# so weather and schedule read independently and each can be empty on
+# its own (one source configured without the other).
 
 st.divider()
 st.subheader("Recovery vs. external factors")
 st.caption(
-    "Yesterday's weather as predictors of today's recovery signals. "
-    "Same lag + significance method as above. Empty until "
-    "`OPENWEATHER_API_KEY` is configured and the weather loader has run."
+    "Yesterday's weather and schedule load as predictors of today's "
+    "recovery signals. Same lag + significance method as the grid above."
 )
 
 ctx = daily_context()
 
 if ctx.empty:
     st.info(
-        "No weather data yet — set `OPENWEATHER_API_KEY` / "
-        "`OPENWEATHER_LAT` / `OPENWEATHER_LON` in `.env`, then run "
-        "`uv run python -m ingest.loaders.weather_openweather 30`."
+        "No external-context data yet — configure `OPENWEATHER_API_KEY` "
+        "(weather) and/or `CALENDAR_ICS_URL` (calendar), then run the "
+        "weekly load. The weather and schedule grids fill in independently."
     )
 else:
-    # daily_signals has the recovery-side columns; daily_context has the
-    # external-factor predictors. Join on day, then build lagged columns.
+    # daily_signals holds the recovery-side columns; daily_context holds the
+    # external-factor predictors. Join on day, lag predictors back one day,
+    # THEN trim to the window (so an edge-of-window lag still resolves).
     full = daily_signals().merge(ctx, on="day", how="inner").sort_values("day")
     full = full.reset_index(drop=True).copy()
 
-    # Predictors: shift weather columns back one day (yesterday's reading).
-    for col in (
-        "temp_min_c",
-        "temp_max_c",
-        "temp_night_c",
-        "humidity_afternoon",
-        "precip_total_mm",
-        "wind_max_mps",
-    ):
-        full[f"{col}_lag1"] = full[col].shift(1)
-
-    # Outcomes (today's values, no shift needed — predictor was lagged).
+    # Outcomes: today's values (predictors are the lagged side).
     full["hrv_today"] = full["hrv_ms"]
     full["rhr_today"] = full["rhr_bpm"]
     full["recovery_today"] = full["recovery_score"]
     full["sleep_today"] = full["sleep_minutes"]
-
-    # Same lookback window as the main heatmap
-    full = full[full["day"] >= full["day"].max() - pd.Timedelta(days=window_days - 1)].copy()
-
-    EXT_LEADING = {
-        "temp_night_c_lag1": "Yesterday night temp (°C)",
-        "temp_max_c_lag1": "Yesterday max temp (°C)",
-        "humidity_afternoon_lag1": "Yesterday humidity (%)",
-        "precip_total_mm_lag1": "Yesterday precip (mm)",
-        "wind_max_mps_lag1": "Yesterday wind (m/s)",
-    }
     EXT_OUTCOMES = {
         "hrv_today": "Today's HRV",
         "rhr_today": "Today's RHR",
@@ -263,85 +286,81 @@ else:
         "recovery_today": "Today's recovery",
     }
 
-    ext_rows = []
-    for lead_col, lead_label in EXT_LEADING.items():
-        for out_col, out_label in EXT_OUTCOMES.items():
-            sub = full[[lead_col, out_col]].dropna()
-            n = len(sub)
-            if n < 5:
-                r = np.nan
-                p = np.nan
-            else:
-                r = float(sub[lead_col].corr(sub[out_col]))
-                p = _two_tailed_p(r, n)
-            ext_rows.append(
-                {
-                    "lead": lead_label,
-                    "outcome": out_label,
-                    "r": r,
-                    "n": n,
-                    "p": p,
-                    "label": (
-                        f"{r:+.2f}{'★' if (not pd.isna(p) and p < 0.05) else ''}"
-                        if not pd.isna(r)
-                        else "—"
-                    ),
-                }
-            )
+    # Predictors: shift each external column back one day (yesterday's value).
+    WEATHER_COLS = (
+        "temp_min_c",
+        "temp_max_c",
+        "temp_night_c",
+        "humidity_afternoon",
+        "precip_total_mm",
+        "wind_max_mps",
+    )
+    # Boolean → float so the high-meeting-day point-biserial r is a plain Pearson.
+    full["is_high_meeting_day"] = full["is_high_meeting_day"].astype(float)
+    CALENDAR_COLS = (
+        "timed_event_count",
+        "timed_event_hours",
+        "meeting_density",
+        "is_high_meeting_day",
+    )
+    for col in (*WEATHER_COLS, *CALENDAR_COLS):
+        full[f"{col}_lag1"] = full[col].shift(1)
 
-    if not ext_rows or all(pd.isna(row["r"]) for row in ext_rows):
-        st.info(
-            "Not enough overlap between weather and recovery data yet "
-            "(need ≥ 5 paired days). Re-check after the next weekly_load."
+    windowed = full[full["day"] >= full["day"].max() - pd.Timedelta(days=window_days - 1)].copy()
+
+    # ----------------------------------------------------- weather sub-grid
+    st.markdown("**Weather → recovery**")
+    WEATHER_LEADING = {
+        "temp_night_c_lag1": "Yesterday night temp (°C)",
+        "temp_max_c_lag1": "Yesterday max temp (°C)",
+        "humidity_afternoon_lag1": "Yesterday humidity (%)",
+        "precip_total_mm_lag1": "Yesterday precip (mm)",
+        "wind_max_mps_lag1": "Yesterday wind (m/s)",
+    }
+    if windowed[list(WEATHER_COLS)].notna().any().any():
+        _external_grid(
+            windowed,
+            WEATHER_LEADING,
+            EXT_OUTCOMES,
+            height=320,
+            empty_msg="Not enough weather/recovery overlap yet (need ≥ 5 paired days).",
+            caption=(
+                "Weather is sparse by nature — n drops fast for the rainier and "
+                "windier rows. Treat |r| below 0.2 as noise even when starred."
+            ),
         )
     else:
-        ext_df = pd.DataFrame(ext_rows)
-        ext_df["lead"] = pd.Categorical(
-            ext_df["lead"], categories=list(EXT_LEADING.values()), ordered=True
-        )
-        ext_df["outcome"] = pd.Categorical(
-            ext_df["outcome"], categories=list(EXT_OUTCOMES.values()), ordered=True
+        st.info(
+            "No weather data yet — set `OPENWEATHER_API_KEY` / `OPENWEATHER_LAT` / "
+            "`OPENWEATHER_LON` in `.env`, then run "
+            "`uv run python -m ingest.loaders.weather_openweather 30`."
         )
 
-        ext_heat = (
-            alt.Chart(ext_df)
-            .mark_rect(stroke="white", strokeWidth=1)
-            .encode(
-                x=alt.X("outcome:N", title=None, sort=list(EXT_OUTCOMES.values())),
-                y=alt.Y("lead:N", title=None, sort=list(EXT_LEADING.values())),
-                color=alt.Color(
-                    "r:Q",
-                    scale=alt.Scale(scheme="redblue", domain=[-1, 1], reverse=True),
-                    legend=alt.Legend(title="Pearson r", orient="bottom"),
-                ),
-                tooltip=[
-                    alt.Tooltip("lead:N", title="Leading indicator"),
-                    alt.Tooltip("outcome:N", title="Outcome"),
-                    alt.Tooltip("r:Q", title="Pearson r", format="+.3f"),
-                    alt.Tooltip("n:Q", title="n (paired days)"),
-                    alt.Tooltip("p:Q", title="p (normal approx)", format=".4f"),
-                ],
-            )
+    # ----------------------------------------------- schedule-load sub-grid
+    st.markdown("**Schedule load → recovery**")
+    CALENDAR_LEADING = {
+        "timed_event_count_lag1": "Yesterday's meetings (count)",
+        "timed_event_hours_lag1": "Yesterday's meeting hours",
+        "meeting_density_lag1": "Yesterday's meeting density",
+        "is_high_meeting_day_lag1": "Yesterday a high-meeting day",
+    }
+    if windowed["timed_event_count"].fillna(0).gt(0).any():
+        _external_grid(
+            windowed,
+            CALENDAR_LEADING,
+            EXT_OUTCOMES,
+            height=300,
+            empty_msg="Not enough calendar/recovery overlap yet (need ≥ 5 paired days).",
+            caption=(
+                'The "5 back-to-back meetings" question lives here — meeting '
+                "density near 1.0 means a packed day. Correlation ≠ causation: a "
+                "busy calendar co-moves with travel, stress, and short sleep."
+            ),
         )
-        ext_text = (
-            alt.Chart(ext_df)
-            .mark_text(fontSize=14, fontWeight="bold")
-            .encode(
-                x="outcome:N",
-                y="lead:N",
-                text="label:N",
-                color=alt.condition("abs(datum.r) > 0.5", alt.value("white"), alt.value("#1e293b")),
-            )
-        )
-        st.altair_chart(
-            (ext_heat + ext_text).properties(height=320),
-            use_container_width=True,
-        )
-
-        st.caption(
-            "Weather is sparse by nature — n drops fast for the rainier and "
-            "windier rows since most days are quiet. Treat absolute r values "
-            "below 0.2 as noise even when starred."
+    else:
+        st.info(
+            "No calendar data yet — set `CALENDAR_ICS_URL` in `.env`, then run "
+            "the weekly load so `mart_daily_context` fills in."
         )
 
 # ---------------------------------------------------------------- caveats
@@ -357,10 +376,15 @@ with st.expander("Method + caveats"):
 - **Lag structure**: leading indicators are aligned to predict the *next
   day's* outcome — so each row in the underlying frame pairs day D's lead
   with day D+1's outcome, except yesterday's TRIMP which is day D-1 → D.
-- **External factors (lower grid)**: same lag idea, inverted framing —
-  every weather column is shifted back one day, so each row pairs
-  yesterday's weather with today's recovery / HRV / sleep. The
-  pairing is on an `inner` join, so the effective window can be
-  shorter than the upper grid until the weather backfill catches up.
+- **External factors (lower grids)**: same lag idea — every weather and
+  calendar column is shifted back one day, so each row pairs *yesterday's*
+  weather / schedule with *today's* recovery / HRV / sleep. Pairing is an
+  `inner` join, so the effective window can be shorter than the upper grid
+  until each source's backfill catches up.
+- **Schedule load**: *meeting density* is the share of the first-to-last
+  meeting window actually spent in meetings — a back-to-back proxy (~1.0 =
+  packed). *High-meeting day* is ≥ 5 timed events. These describe what your
+  calendar looked like, not causation: a packed day co-moves with stress,
+  travel, and short sleep, any of which could be the real driver.
 """
     )

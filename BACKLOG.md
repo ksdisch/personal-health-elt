@@ -41,6 +41,19 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Acceptance:** Three new ingest loaders (`weather_openweather.py`, `calendar_google.py`, optionally `oura.py`) landing in `raw.weather`, `raw.calendar_events`, `raw.oura_*`. New marts: `mart_daily_context` (joins weather + calendar density to the day), plus correlation columns added to `mart_recovery_state`. Streamlit "Correlations" page (already exists at 09) gets a new section: "Recovery vs. external factors."
 - **Size:** L
 - **Added:** 2026-05-11
+- **Progress (2026-06-05):** Weather + calendar loaders, `raw.weather` /
+  `raw.calendar_daily`, `stg_weather` / `stg_calendar`, and `mart_daily_context`
+  shipped earlier (#19, #21). This PR surfaces the calendar half on page 09:
+  derived schedule-load signals (`meeting_span_hours`, `meeting_density`,
+  `is_high_meeting_day`) in `mart_daily_context`, a "Schedule load → recovery"
+  correlation grid, and golden-snapshot coverage for the mart. The "5 back-to-back
+  meetings → HRV" question is now answerable. Correlation lives in the non-API
+  `mart_daily_signals` lens + page 09, **not** in `mart_recovery_state` — the
+  original "correlation columns added to mart_recovery_state" acceptance predates
+  the frozen public-API contract. **Remaining:** optional Oura/HomeKit sources;
+  the OpenWeather 401 fix (tracked separately); sleep-environment correlations
+  surface once a corpus carries sleep (real data already does; the demo corpus
+  does not yet).
 
 
 ### [Refactor] Calibrate sleep score targets to personal baseline

@@ -11,6 +11,16 @@ they group work by narrative arc rather than by release event.
 ## [Unreleased]
 
 ### Added
+- **Cross-source correlations — schedule load.** `mart_daily_context` gains
+  derived schedule-load signals (`meeting_span_hours`, `meeting_density`,
+  `is_high_meeting_day`) computed from the existing calendar density, and page 09
+  grows a "Schedule load → recovery" correlation grid alongside the weather grid
+  — the "did 5 back-to-back meetings tank my HRV?" question, now answerable. The
+  external-factors section is refactored into a shared `_corr_rows` / `_corr_heatmap`
+  helper and gates the weather vs. schedule sub-grids independently. Adds the first
+  golden-snapshot coverage for `mart_daily_context`
+  (`tests/golden/mart_daily_context.json`). `mart_recovery_state` (public API) is
+  untouched — correlation stays in the non-API `mart_daily_signals` lens.
 - **Synthetic-warehouse autonomy substrate** — `ingest/synth` generates a
   deterministic, scenario-driven Apple-Health corpus the real loaders ingest
   unchanged, and `ingest/flows/make_demo_db` stands up the entire warehouse in an
