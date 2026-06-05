@@ -10,6 +10,12 @@ they group work by narrative arc rather than by release event.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-05
+
+Autonomy substrate, causal inference, and cross-source correlations — plus the
+engineering-artifacts program (ADRs, diagrams, runbooks, CONTRIBUTING, this
+changelog) and the mode-independent orchestrator reframe.
+
 ### Added
 - **Cross-source correlations — schedule load.** `mart_daily_context` gains
   derived schedule-load signals (`meeting_span_hours`, `meeting_density`,
@@ -125,7 +131,8 @@ Foundations — the end-to-end closed loop.
 ### Fixed
 - ACWR chart bands share the x-scale with the line.
 
-[Unreleased]: https://github.com/ksdisch/personal-health-elt/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ksdisch/personal-health-elt/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ksdisch/personal-health-elt/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ksdisch/personal-health-elt/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ksdisch/personal-health-elt/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ksdisch/personal-health-elt/releases/tag/v0.1.0

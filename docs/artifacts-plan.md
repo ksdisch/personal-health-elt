@@ -6,7 +6,8 @@
 - 2026-06-04: Generated data-freshness SLO note at `docs/reliability/slos.md` (formalizes the dbt source-freshness warn-2d/error-7d config as an SLI/SLO). Status: 🟡 → ✅.
 - 2026-06-04: Generated SECURITY.md at `SECURITY.md` (trust boundary, gitignored secrets, opt-in outbound-data surface, private-advisory reporting). Status: 🟡 → ✅.
 - 2026-06-04: Generated justfile at `justfile` (15 recipes wrapping the documented uv/dbt commands; validated via `just --list`). Status: 🟢 → ✅.
-- 2026-06-04: Generated per-scenario playbook at `docs/playbooks/export-didnt-sync.md` (export-didn't-sync-from-iCloud). Status: 🟡 → ✅. **Tier-3 docs substantially complete — only the PR template remains (it lives in `.github/`, a code change out of artifacts-generate scope).**
+- 2026-06-05: Added `.github/PULL_REQUEST_TEMPLATE.md` (Summary / Changes / Test plan / Contract-&-breaking-changes with the `mart_recovery_state` consumer checklist). Status: 🟢 → ✅. **This completes Tier-3 — the full artifacts plan is now shipped.**
+- 2026-06-04: Generated per-scenario playbook at `docs/playbooks/export-didnt-sync.md` (export-didn't-sync-from-iCloud). Status: 🟡 → ✅. **Tier-3 docs substantially complete — only the PR template remained (it lives in `.github/`, a code change out of artifacts-generate scope).**
 - 2026-06-03: Generated ROADMAP.md at `ROADMAP.md` (now/next/later forward narrative restructured from BACKLOG.md; BACKLOG kept as the detailed live backlog and cross-linked per item). Status: 🟢 → ✅.
 - 2026-06-03: Generated postmortem template at `docs/postmortems/TEMPLATE.md` (adapted to a single-user data-pipeline severity scale S1–S3 + a pipeline-specific "Data-integrity verification" section). Status: 🟢 → ✅.
 - 2026-06-03: Generated flow-failure runbook at `docs/runbooks/weekly-load-failure.md` (key message: re-running `weekly_load` is safe — idempotent loaders; also documents the real detection signals and the no-alert-on-flow-failure gap). Status: 🟢 → ✅. **This completes Tier-2.**
@@ -171,7 +172,7 @@ Legend: ✅ present & healthy · ⚠️ stale/thin · 🟢 recommended (missing,
 | # | Artifact |
 |---|---|
 | 11 | ✅ `justfile` (`justfile`) — done |
-| 12 | PR template — **deferred** (lives in `.github/`, out of artifacts-generate scope; track as a separate code task) |
+| 12 | ✅ PR template (`.github/PULL_REQUEST_TEMPLATE.md`) — done |
 | 13 | ✅ Forecasting design doc (`docs/design/forecasting-marts.md`) — done |
 | 14 | ✅ CONTRIBUTING.md (`CONTRIBUTING.md`) — done · Glossary folded into the data dictionary (done) |
 | 15 | ✅ SLI/SLO freshness note (`docs/reliability/slos.md`) · ✅ per-scenario playbook (`docs/playbooks/export-didnt-sync.md`) · ✅ SECURITY.md (`SECURITY.md`) — done |
