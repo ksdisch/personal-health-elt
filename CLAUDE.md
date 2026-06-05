@@ -142,6 +142,37 @@ read code directly. Every concrete action is dispatched.
 > §3 and §4 of `.claude/orchestrator-prompt.md` for the full mode rules and
 > precedence. Invariants (§1) and gates (§2) apply in both modes.
 
+## Claude tooling for this repo
+
+Repo-local slash commands (`.claude/commands/`) and skills (`.claude/skills/`)
+vendored here so they work in cloud/web sessions and for collaborators — not
+just in a local session that has them globally. All listed below are
+**cloud-safe** (pure reasoning + repo edits).
+
+Commands (invoke as `/<name>`):
+
+- `/begin` — open a session: orient on branch/commits/PRs, recap last `/wrap`,
+  route into the session-start flow.
+- `/wrap` — end-of-session recap + vocabulary + active-recall quiz, saved to a
+  dated file.
+- `/handoff` — generate a paste-ready prompt to continue work in a fresh
+  session with no context loss.
+- `/explore-plan` — explore → plan → confirm before any code; proposes 2–3
+  ranked approaches and waits for approval.
+- `/tdd` — test-first loop: write failing tests → commit → implement without
+  modifying the tests.
+- `/autonomous-milestone` — plan/build/test/verify a target end-to-end (or
+  triage the backlog → build); uses ultracode multi-agent orchestration.
+- `/trim-context` — find and fix CLAUDE.md + memory token bloat against the
+  40k-char limit.
+
+Skills (auto-trigger on intent, or invoke explicitly):
+
+- `artifacts-audit` — audit the repo for missing engineering artifacts
+  (READMEs, ADRs, ERDs, runbooks) → `docs/artifacts-plan.md`. Plans only.
+- `artifacts-generate` — generate artifacts from that plan. Companion to
+  `artifacts-audit`; does not modify source code.
+
 ## Conventions for subagents (every worker inherits these)
 
 - **Stay in scope.** Edit ONLY the files listed under "Files in scope" in
