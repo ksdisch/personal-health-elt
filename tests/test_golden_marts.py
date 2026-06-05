@@ -47,9 +47,22 @@ GOLDEN_MARTS: dict[str, dict] = {
     "mart_training_load": {"order_by": ["day"], "exclude": []},
     "mart_daily_signals": {"order_by": ["day"], "exclude": ["is_today"]},
     "mart_workout_zones": {"order_by": ["start_ts_local"], "exclude": []},
+    # The causal mart's continuous columns come from host-side numpy/statsmodels,
+    # whose last-digit results can differ across BLAS backends (macOS vs CI Linux).
+    # Freeze only the deterministic columns (ids, verdict, integer counts, cutoff);
+    # the float estimates are covered by tolerance-based tests
+    # (test_causal_engine_recovers_planted_effect + tests/test_causal.py).
     "mart_experiment_effects": {
         "order_by": ["experiment_name", "target_metric"],
-        "exclude": [],
+        "exclude": [
+            "level_change",
+            "level_ci_low",
+            "level_ci_high",
+            "slope_change",
+            "hac_p_value",
+            "placebo_p_value",
+            "did_estimate",
+        ],
     },
 }
 
