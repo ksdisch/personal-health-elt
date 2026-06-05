@@ -55,13 +55,6 @@ Pick items with the `project-backlog` skill in Claude Code.
 - **Size:** L
 - **Added:** 2026-05-11
 
-### [Feature] Personal experiments framework — log interventions, measure pre/post effect
-- **Why:** You try things: a new supplement, sleeping with windows open, fasted morning training, dropping caffeine after noon. Today there's no rigorous way to know if any of them moved the needle. A lightweight experiments framework lets you log "started magnesium 2026-04-01, stopped 2026-05-01," choose target metrics (RHR, HRV, sleep score), and get pre/post statistics with a confidence indication. Personal causal inference, productionized.
-- **Acceptance:** Seed file `experiments.csv` (name, start_date, end_date, hypothesis, target_metrics). New macro `experiment_pre_post(experiment_name, metric, window_days)` computes mean/median/std for the N days before vs. during. New mart `mart_experiment_results`. Streamlit "Experiments" page: log a new experiment, view all past experiments with their effect sizes, and a small write-up generator (Claude summarizes results in plain English).
-- **Size:** L
-- **Added:** 2026-05-11
-
-
 ### [Feature] Auto-generated "Year in Review" report — quarterly + annual narrative
 - **Why:** Strava Wrapped is a viral moment because the data is in your hands as a story, not a dashboard. Once a quarter / once a year, generate a long-form HTML or PDF report: training volume trends, biggest gains, worst weeks, seasonal patterns, recovery story, top correlations discovered. Claude writes the narrative; the marts provide the numbers. Becomes a sharable artifact and a hell of a portfolio piece.
 - **Acceptance:** New Python script `reports/year_in_review.py` (or a Prefect flow) that queries the marts, hands the aggregates to Claude with a prompt template, and outputs `reports/2026-q2.html` (Tailwind + Altair charts) + a Markdown summary. Designed to be re-runnable for any time window. At least one full report committed to the repo for show.
@@ -113,6 +106,18 @@ Pick items with the `project-backlog` skill in Claude Code.
 ---
 
 ## Done
+
+### [Feature] Synthetic-warehouse autonomy substrate + warehouse regression testing
+- **Why:** Every real-data verification path depended on the user's local Postgres being pre-populated from an iOS export — the single biggest blocker to a fully-autonomous build, and the flagship mart had zero SQL branch coverage. CI even admitted tests "pass trivially on empty inputs."
+- **Acceptance:** A deterministic generator the real loaders ingest unchanged; an isolated `health_demo` build flow with a hard safety guard; golden-snapshot regression tests; dbt unit tests on branchy logic; a CI real-data gate on populated tables.
+- **Size:** L
+- **Completed:** 2026-06-05 — branch `feat/synthetic-warehouse-causal-lab`. `ingest/synth` (fixed-seed, scenario→`recovery_signal` branch map, in-workout HR, multi-source dedup overlaps, direct weather/calendar). `ingest/flows/make_demo_db` builds the full 17-mart warehouse in `health_demo` via explicit-engine injection + a `/health_demo` hard guard (`tests/test_demo_db_safety.py`) — sidestepping the `@lru_cache` import-time `DATABASE_URL` footgun. Golden harness (`tests/test_golden_marts.py`, 9 marts, `UPDATE_GOLDEN=1`) + flagship `recovery_signal` dbt 1.8+ unit test; both teeth-proven. CI second job builds the corpus + runs contract/unit/golden tests on populated data. From a dropped DB, one command rebuilds everything; full pytest 240 passed.
+
+### [Feature] Personal experiments framework — Causal-Inference Lab (ITS/HAC + permutation + DiD)
+- **Why:** The pipeline was descriptive/predictive only. This adds the first *causal* layer — "what actually moved the needle, and how confident am I?"
+- **Acceptance (delivered, evolved):** `experiments.csv` seed; per (experiment, metric) effect estimates; a new mart; an Experiments Streamlit page with effect sizes + a plain-English verdict.
+- **Size:** L
+- **Completed:** 2026-06-05 — branch `feat/synthetic-warehouse-causal-lab`. Went beyond simple pre/post means to **interrupted time series with Newey-West HAC errors + a permutation/placebo p-value + difference-in-differences** (`ingest/analysis/causal.py`). Results flow `raw.experiment_effects` → `stg_experiment_effects` → `mart_experiment_effects` (grain + `accepted_values` tests), keeping strict layering (ADR-0009); statsmodels adopted as a scoped exception to ADR-0006 (ADR-0008). `13_experiments` page renders the ITS fit + counterfactual + effect cards. Validated by recovering a **−3 bpm RHR effect planted in the synthetic corpus** (recovered −3.24, HAC p<0.001 → likely_decrease) while a no-effect control reads no_clear_effect; DB-free oracle tests pin level/slope recovery, permutation behaviour, and HAC-vs-OLS SE. The original `experiment_pre_post` macro / `mart_experiment_results` naming in the acceptance was superseded by the statistically-richer Python design. **Deferred:** the optional Claude write-up generator (the rule-based verdict ships now; an LLM narrative is a follow-up).
 
 ### [Feature] Forecasting marts — predict next week's recovery and training load
 - **Why:** Every existing mart looks backward. Adding forward-looking forecasts (next 7d RHR, HRV, ACWR, projected training load given a planned-workout slate) demonstrates real time-series chops and unlocks a much more useful workout planner: "if I run 8 miles tomorrow, here's where your ACWR lands." This is the most underrated analytics-engineer hiring signal — most candidates can build descriptive marts; very few build predictive ones.

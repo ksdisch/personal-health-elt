@@ -1,6 +1,10 @@
 # Autonomous Build Plan — Synthetic Warehouse + Causal-Inference Lab
 
-> **Status:** in progress (branch `feat/synthetic-warehouse-causal-lab`).
+> **Status:** ✅ delivered on branch `feat/synthetic-warehouse-causal-lab`
+> (both phases built, verified, and committed; full pytest 240 passed, dbt build
+> green on a from-scratch `health_demo`). Open item: apply the idempotent
+> `scripts/init_raw_schema.sql` migration to the real `health` DB to pick up
+> `raw.experiment_effects` before the next build there.
 > **Provenance:** milestone selected from a multi-agent brainstorm (43-agent
 > ranked shortlist); this plan was hardened against the repo's actual
 > mechanics. It doubles as the *designed autonomous workflow* — the contract a

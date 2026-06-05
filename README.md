@@ -38,12 +38,28 @@ Fly / Railway), and the redeploy path._
 | **Time correctness** | UTC at rest, `America/Chicago` everywhere downstream. TZ conversion lives in exactly one layer. |
 | **Date-spine rolling windows** | `mart_training_load` generates a contiguous date series so 7-day / 28-day rolling averages denominate correctly through zero-load days. |
 | **Pure-SQL forecasting** | `holt_forecast` macro implements Holt's linear method (level + trend) with `WITH RECURSIVE` — `mart_forecast_bands` + a walk-forward `mart_forecast_backtest`, no Python ML dependency. |
-| **Real Streamlit UX** | 12 pages including a Weekly Review with an Altair-rendered ACWR chart on color-coded sweet-spot / injury-risk bands. |
+| **Real Streamlit UX** | 13 pages including a Weekly Review with an Altair-rendered ACWR chart on color-coded sweet-spot / injury-risk bands. |
 | **Closed-loop integration** | dbt mart → Python generators → vault Markdown / Firestore → three consumers — all idempotent and recoverable. |
+| **Reproducible test data** | `ingest/synth` generates a deterministic, scenario-driven Apple-Health corpus the real loaders ingest unchanged — the whole warehouse stands up in an isolated `health_demo` DB with **zero iOS export and zero credentials** (`python -m ingest.flows.make_demo_db`). |
+| **Warehouse regression testing** | Golden-snapshot tests freeze every mart's output over the synthetic corpus; dbt 1.8+ unit tests give the flagship mart's `recovery_signal` its first isolated branch coverage; a CI real-data gate runs the contract tests on **populated** tables. |
+| **Causal inference** | `mart_experiment_effects`: interrupted-time-series with Newey-West **HAC** errors + permutation/placebo p-values + difference-in-differences over logged interventions — validated by recovering a known effect *planted* in synthetic data. |
 
 **Scale of real data flowing through right now:** 676,927 quantity samples across 35 metric types · 186 workouts · 72,331 HR samples range-joined to workout windows · 68 daily recovery-state rows · 61 scored sleep nights — all loaded idempotently and rebuilt end-to-end.
 
 ## Screenshots
+
+### Experiments — personal causal inference
+
+The newest page answers the *causal* question, not just "what happened". For each
+logged intervention it runs an interrupted-time-series fit (Newey-West HAC errors)
+plus a permutation/placebo p-value, and renders the actuals, the intervention
+cutoff, and the pre-intervention mean extended as a dashed **counterfactual**. The
+shot below is rendered against the fully-synthetic `health_demo` warehouse: the
+`magnesium_glycinate` experiment recovers the **−3 bpm RHR effect planted by the
+generator** (−3.24, HAC p<0.001 → _likely decrease_), while the no-effect
+`cold_plunge` control correctly reads _no clear effect_.
+
+![Experiments page](docs/screenshots/experiments.png)
 
 ### Weekly Review — `mart_recovery_state` consumer surface
 
@@ -80,10 +96,10 @@ flowchart TD
     end
 
     subgraph PG["🗄️ Postgres 16 (Docker)"]
-        RAW["raw.*  (7 tables)<br/>+ file_inventory SHA256 ledger"]
-        STG["analytics_staging<br/>5 views · TZ→America/Chicago · source dedup"]
+        RAW["raw.*  (8 tables)<br/>+ file_inventory SHA256 ledger"]
+        STG["analytics_staging<br/>6 views · TZ→America/Chicago · source dedup"]
         INT["analytics_intermediate<br/>3 models · workout×HR range-join"]
-        MARTS["analytics_marts<br/>16 other marts (17 incl. ★)"]
+        MARTS["analytics_marts<br/>17 other marts (18 incl. ★)"]
         REC{{"★ mart_recovery_state<br/>PUBLIC API · daily grain<br/>14 cols · contract-tested"}}
     end
 
