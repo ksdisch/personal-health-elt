@@ -65,9 +65,22 @@ jobs:
       - name: dbt parse
         run: uv run dbt parse --project-dir transform --profiles-dir transform
 
-      - name: dbt build
-        # Runs against empty raw.* tables (just-initialized schema). All models
-        # and tests must compile + execute; not_null/unique/accepted_values tests
-        # pass trivially on empty inputs. Catches SQL mismatches that `dbt parse`
-        # alone misses (column drift, bad joins, type errors).
+      - name: dbt build (empty-schema smoke)
+        # Compilation smoke: against empty raw.* tables, all models + tests must
+        # compile + execute (not_null/unique/accepted_values pass trivially on
+        # empty inputs). Catches SQL mismatches `dbt parse` misses (column drift,
+        # bad joins, type errors). The REAL-DATA gate below is what actually
+        # exercises the contract tests + branch logic on populated tables.
         run: uv run dbt build --project-dir transform --profiles-dir transform
+
+      - name: Build synthetic demo warehouse (real-data gate)
+        # Stands up an ISOLATED health_demo DB from a deterministic synthetic
+        # corpus and dbt-builds the full warehouse — so accepted_values / unique
+        # contract tests + dbt unit tests run against POPULATED data, not empty
+        # tables. Zero iOS export, zero credentials. See ingest/synth/ and
+        # docs/design/autonomous-build-plan.md.
+        run: uv run python -m ingest.flows.make_demo_db
+
+      - name: Golden-mart regression tests (populated data)
+        # Freezes each mart's output over the synthetic corpus; drift goes RED.
+        run: uv run pytest tests/test_golden_marts.py -q
