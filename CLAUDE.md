@@ -166,12 +166,30 @@ Commands (invoke as `/<name>`):
 - `/trim-context` — find and fix CLAUDE.md + memory token bloat against the
   40k-char limit.
 
-Skills (auto-trigger on intent, or invoke explicitly):
+Skills:
 
-- `artifacts-audit` — audit the repo for missing engineering artifacts
-  (READMEs, ADRs, ERDs, runbooks) → `docs/artifacts-plan.md`. Plans only.
-- `artifacts-generate` — generate artifacts from that plan. Companion to
-  `artifacts-audit`; does not modify source code.
+- `/new-loader` — *(user-invocable)* scaffold a new idempotent HK loader under
+  `ingest/loaders/`, pre-wired to the two-level idempotency contract + the
+  dedup-at-staging rule. Walks the five wiring points (loader, batch dispatch,
+  raw DDL, staging model, pytest).
+- `artifacts-audit` — *(auto-triggers)* audit the repo for missing engineering
+  artifacts (READMEs, ADRs, ERDs, runbooks) → `docs/artifacts-plan.md`. Plans only.
+- `artifacts-generate` — *(auto-triggers)* generate artifacts from that plan.
+  Companion to `artifacts-audit`; does not modify source code.
+
+Hooks (`.claude/settings.json` → scripts in `.claude/hooks/`):
+
+- **`guard-mart-contract.sh`** (`PreToolUse` on Edit/Write) — *denies* direct
+  edits to `mart_recovery_state.sql` (the off-limits public-API model) and
+  *asks* for confirmation on `marts/schema.yml` (holds the contract tests).
+  Bypass only with explicit authorization by editing `.claude/settings.json`.
+- **`guard-git-add.sh`** (`PreToolUse` on Bash) — *denies* `git add -A` /
+  `git add .` / `git add --all` so `.env`, `data/raw/*.csv`, and
+  `transform/target/` can't be staged accidentally.
+
+Subagent added for this contract surface: **`mart-contract-reviewer`** — a
+read-only auditor (see `.claude/agents/`) that checks any `mart_recovery_state`
+change keeps both downstream consumers and the dbt tests in lockstep.
 
 ## Conventions for subagents (every worker inherits these)
 
