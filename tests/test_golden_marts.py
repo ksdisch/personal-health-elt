@@ -47,6 +47,10 @@ GOLDEN_MARTS: dict[str, dict] = {
     "mart_training_load": {"order_by": ["day"], "exclude": []},
     "mart_daily_signals": {"order_by": ["day"], "exclude": ["is_today"]},
     "mart_workout_zones": {"order_by": ["start_ts_local"], "exclude": []},
+    "mart_experiment_effects": {
+        "order_by": ["experiment_name", "target_metric"],
+        "exclude": [],
+    },
 }
 
 
@@ -172,3 +176,27 @@ def test_recovery_signal_branch_coverage(demo_built) -> None:
     expected = {"well_recovered", "neutral", "strained", "insufficient_data"}
     missing = expected - seen
     assert not missing, f"synthetic corpus failed to cover recovery_signal branches: {missing}"
+
+
+def test_causal_engine_recovers_planted_effect(demo_built) -> None:
+    """End-to-end Phase-1 oracle: the generator plants a -3 bpm RHR step at the
+    magnesium experiment's cutoff; the causal engine, run through the warehouse,
+    must recover it as a significant decrease — while the no-effect cold_plunge
+    control stays 'no_clear_effect'."""
+    with demo_built.connect() as conn:
+        rows = {
+            (r[0], r[1]): {"level": r[2], "verdict": r[3]}
+            for r in conn.execute(
+                text(
+                    "SELECT experiment_name, target_metric, level_change, verdict "
+                    f"FROM {MARTS_SCHEMA}.mart_experiment_effects"
+                )
+            )
+        }
+
+    mag = rows[("magnesium_glycinate", "rhr_bpm")]
+    assert mag["verdict"] == "likely_decrease", mag
+    assert -4.0 <= mag["level"] <= -2.0, mag["level"]  # planted -3, generous band
+
+    cold = rows[("cold_plunge", "rhr_bpm")]
+    assert cold["verdict"] == "no_clear_effect", cold  # negative control

@@ -37,6 +37,7 @@ from prefect.exceptions import MissingContextError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from ingest.analysis.causal import run as run_causal
 from ingest.config import (
     POSTGRES_HOST,
     POSTGRES_PASSWORD,
@@ -127,6 +128,9 @@ def bootstrap_and_reset(engine: Engine, *, reset: bool) -> None:
             # file_inventory CASCADEs to quantities/workouts/categories/calendar.
             conn.execute(text("TRUNCATE raw.file_inventory CASCADE"))
             conn.execute(text("TRUNCATE raw.weather"))
+            # Not FK-linked to file_inventory, so truncate explicitly for a clean
+            # rebuild (results are recomputed each run).
+            conn.execute(text("TRUNCATE raw.experiment_effects"))
         log.info("reset raw.* in %s", DEMO_DB)
 
 
@@ -175,8 +179,12 @@ def load_corpus(engine: Engine, *, seed: int, scenario: str) -> dict:
         return summary
 
 
-def run_dbt_build_demo() -> int:
-    """``dbt build`` against ``health_demo`` (subprocess; only env change is the DB)."""
+def run_dbt_build_demo(select: str | None = None) -> int:
+    """``dbt build`` against ``health_demo`` (subprocess; only env change is the DB).
+
+    Pass ``select`` to scope the build (e.g. ``"stg_experiment_effects+"`` to
+    rebuild just the causal models after the Python effects are computed).
+    """
     log = _logger()
     env = os.environ.copy()
     env["POSTGRES_DB"] = DEMO_DB
@@ -190,6 +198,8 @@ def run_dbt_build_demo() -> int:
         "--profiles-dir",
         str(PROJECT_ROOT / "transform"),
     ]
+    if select:
+        cmd += ["--select", select]
     log.info("Running (POSTGRES_DB=%s): %s", DEMO_DB, " ".join(cmd))
     proc = subprocess.run(
         cmd, cwd=PROJECT_ROOT, env=env, check=False, capture_output=True, text=True
@@ -225,7 +235,17 @@ def make_demo_db(
     finally:
         engine.dispose()
     if run_dbt:
+        # 1) Full build: daily marts + the (initially empty) experiment models.
         run_dbt_build_demo()
+        # 2) Phase 1: compute causal effects from the freshly-built daily marts,
+        #    write them to raw.experiment_effects, then rebuild only the causal
+        #    models so mart_experiment_effects + its tests run on populated data.
+        eng2 = demo_engine()
+        try:
+            summary["experiment_effects"] = run_causal(engine=eng2, seed=seed)
+        finally:
+            eng2.dispose()
+        run_dbt_build_demo(select="stg_experiment_effects+")
         summary["dbt_build"] = "ok"
     log.info("demo warehouse ready: %s", summary)
     return summary

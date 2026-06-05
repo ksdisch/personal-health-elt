@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: stg_experiment_effects
+    description: >
+      Staging for raw.experiment_effects — Python causal-inference results
+      (ITS/HAC, permutation, DiD) with the audit timestamp normalised to
+      America/Chicago. One row per (experiment, target metric).
+
+  - name: mart_experiment_effects
+    description: >
+      Personal causal-inference results: per (experiment, target metric), the
+      interrupted-time-series level change (with HAC errors + CI), permutation
+      p-value, secondary difference-in-differences, and a conservative verdict.
+    columns:
+      - name: experiment_name
+        tests: [not_null]
+      - name: target_metric
+        tests: [not_null]
+      - name: verdict
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [likely_decrease, likely_increase, no_clear_effect, confounded, insufficient_data]

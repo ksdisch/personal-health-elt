@@ -13,3 +13,5 @@ decisions are marked `Superseded by ADR-NNNN` rather than rewritten.
 | [0005](0005-mart-recovery-state-public-api.md) | Treat `mart_recovery_state` as a versioned public API with lockstep consumers | Accepted |
 | [0006](0006-pure-sql-holt-forecasting.md) | Pure-SQL Holt's-method forecasting (no Python ML dependency) | Accepted |
 | [0007](0007-dbt18-nested-accepted-values.md) | Use the dbt 1.8+ nested `arguments:` form for `accepted_values` tests | Accepted |
+| [0008](0008-statsmodels-for-causal-inference.md) | statsmodels for causal inference (scoped exception to ADR-0006) | Accepted |
+| [0009](0009-python-results-reenter-via-raw-staging-mart.md) | Python causal results re-enter the warehouse via raw → staging → mart | Accepted |

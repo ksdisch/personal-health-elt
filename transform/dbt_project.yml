@@ -45,3 +45,7 @@ seeds:
         target_efficiency_pct: numeric
         target_rem_pct: numeric
         target_deep_pct: numeric
+    experiments:
+      +column_types:
+        start_date: date
+        end_date: date

@@ -185,3 +185,31 @@ CREATE INDEX IF NOT EXISTS notification_log_day_idx
 
 COMMENT ON TABLE raw.notification_log IS
     'Notifications already fired by the anomaly pipeline. (rule_name, day) PK guarantees once-per-day dedup; re-running weekly_load is a no-op.';
+
+-- Causal-inference results (Phase 1: the Causal-Inference Lab). One row per
+-- (experiment, target metric), written by ingest/analysis/causal.py and read by
+-- stg_experiment_effects -> mart_experiment_effects. Python-computed estimates
+-- (interrupted-time-series level change with Newey-West HAC errors, a
+-- permutation p-value, and a secondary difference-in-differences) re-enter the
+-- warehouse here so they flow through the normal staging->marts layering rather
+-- than being materialised straight from Python. See docs/adr/0009.
+CREATE TABLE IF NOT EXISTS raw.experiment_effects (
+    experiment_name  TEXT NOT NULL,
+    target_metric    TEXT NOT NULL,
+    cutoff_date      DATE NOT NULL,
+    level_change     DOUBLE PRECISION,
+    level_ci_low     DOUBLE PRECISION,
+    level_ci_high    DOUBLE PRECISION,
+    slope_change     DOUBLE PRECISION,
+    hac_p_value      DOUBLE PRECISION,
+    placebo_p_value  DOUBLE PRECISION,
+    did_estimate     DOUBLE PRECISION,
+    n_pre            INTEGER NOT NULL,
+    n_post           INTEGER NOT NULL,
+    confounded       BOOLEAN NOT NULL DEFAULT FALSE,
+    computed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (experiment_name, target_metric)
+);
+
+COMMENT ON TABLE raw.experiment_effects IS
+    'Per-experiment causal-inference estimates from ingest/analysis/causal.py. PK (experiment_name, target_metric); upserted ON CONFLICT so re-running is idempotent.';

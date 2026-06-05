@@ -19,6 +19,7 @@ dependencies = [
     "anthropic>=0.102.0",
     "sqlparse>=0.5.5",
     "firebase-admin>=6.5",
+    "statsmodels>=0.14.6",
 ]
 
 [dependency-groups]

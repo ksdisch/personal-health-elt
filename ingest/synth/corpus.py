@@ -79,6 +79,18 @@ _COOLDOWN_MIN = 2
 
 SCENARIOS = ("full",)
 
+# Planted causal effect (Phase 1 oracle): a persistent level step applied to RHR
+# from a cutoff date. experiments.csv defines a matching `magnesium_glycinate`
+# experiment whose interrupted-time-series should recover this KNOWN effect end
+# to end through the warehouse. RHR is chosen deliberately — it does NOT feed the
+# recovery_signal logic, so planting it leaves the Phase-0 branch coverage intact.
+PLANTED_RHR_STEPS: tuple[tuple[date, float], ...] = ((date(2024, 2, 15), -3.0),)
+_PLANTED_EXPERIMENT = "magnesium_glycinate"
+
+
+def _planted_rhr_delta(day: date) -> float:
+    return sum(delta for cutoff, delta in PLANTED_RHR_STEPS if day >= cutoff)
+
 
 @dataclass(frozen=True)
 class _DaySpec:
@@ -155,12 +167,18 @@ def _build_day_specs(start: date, rng: random.Random) -> list[_DaySpec]:
             )
             idx += 1
 
+    # RHR is held at a FLAT baseline across all segments (only jitter varies it).
+    # It does not feed recovery_signal, so a flat baseline keeps Phase-0 branch
+    # coverage intact AND gives the Phase-1 causal experiments a clean series in
+    # which the planted RHR step is the dominant signal (segment-driven RHR bumps
+    # near the experiment cutoff would otherwise confound the interrupted-TS fit).
+    rhr_base = 50
     # 1. cold_start (7d): physiology only, no workouts -> insufficient_data
-    add(7, rhr=51, hrv=60, main_min=None)
+    add(7, rhr=rhr_base, hrv=60, main_min=None)
     # 2. baseline (35d): steady moderate load -> neutral / well_recovered
-    add(35, rhr=50, hrv=61, main_min=20, strength_every=5)
+    add(35, rhr=rhr_base, hrv=61, main_min=20, strength_every=5)
     # 3. spike (9d): load surge -> acwr > 1.5 -> strained
-    add(9, rhr=54, hrv=60, main_min=65)
+    add(9, rhr=rhr_base, hrv=60, main_min=65)
     # 4. post-spike + hrv_crash (20d): load back to steady; HRV craters mid-segment
     #    -> early days neutral (acwr dips <0.8), crash days strained (hrv)
     for k in range(20):
@@ -169,7 +187,7 @@ def _build_day_specs(start: date, rng: random.Random) -> list[_DaySpec]:
         specs.append(
             _DaySpec(
                 day=d,
-                rhr=round(52 + jitter(1.0)),
+                rhr=round(rhr_base + jitter(1.0)),
                 hrv=round((42 if crash else 61) + jitter(1.5), 1),
                 workout_main_min=20,
                 activity_type="Running",
@@ -177,7 +195,7 @@ def _build_day_specs(start: date, rng: random.Random) -> list[_DaySpec]:
         )
         idx += 1
     # 5. steady_good (49d): steady load + good HRV -> well_recovered
-    add(49, rhr=49, hrv=63, main_min=22, strength_every=6)
+    add(49, rhr=rhr_base, hrv=63, main_min=22, strength_every=6)
 
     return specs
 
@@ -358,9 +376,10 @@ def generate_corpus(
         # RHR: one value/day at 14:00Z. Optionally duplicated from the phone at
         # the same instant to exercise the source-priority dedup (watch wins).
         rhr_ts = _utc(spec.day, 14)
-        rhr_rows.append(_qty_row(RHR, WATCH, rhr_ts, rhr_ts, "count/min", spec.rhr))
+        rhr_val = round(spec.rhr + _planted_rhr_delta(spec.day))
+        rhr_rows.append(_qty_row(RHR, WATCH, rhr_ts, rhr_ts, "count/min", rhr_val))
         if spec.multisource_rhr:
-            rhr_rows.append(_qty_row(RHR, PHONE, rhr_ts, rhr_ts, "count/min", spec.rhr + 3))
+            rhr_rows.append(_qty_row(RHR, PHONE, rhr_ts, rhr_ts, "count/min", rhr_val + 3))
 
         # HRV: one SDNN value/day at 13:00Z (Apple samples during sleep).
         if spec.hrv is not None:
@@ -414,6 +433,15 @@ def generate_corpus(
     calendar = _calendar_frame(days, calendar_sha, rng)
 
     n_qty = sum(len(r) for r in (rhr_rows, hrv_rows, hr_rows, vo2_rows, mass_rows))
+    planted = [
+        {
+            "experiment": _PLANTED_EXPERIMENT,
+            "metric": "rhr_bpm",
+            "cutoff": str(cutoff),
+            "level_change": delta,
+        }
+        for cutoff, delta in PLANTED_RHR_STEPS
+    ]
     return CorpusManifest(
         csv_dir=out_dir,
         weather=weather,
@@ -424,4 +452,5 @@ def generate_corpus(
         scenario=scenario,
         n_quantity_rows=n_qty,
         n_workout_rows=len(workout_rows),
+        planted_effects=planted,
     )
