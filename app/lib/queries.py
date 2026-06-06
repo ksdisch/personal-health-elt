@@ -547,3 +547,85 @@ def execute_safe_sql(
     with engine.connect() as conn, conn.begin():
         conn.execute(text(f"SET LOCAL statement_timeout = '{int(timeout_seconds)}s'"))
         return pd.read_sql(text(safe_sql), conn)
+
+
+# ---------------------------------------------------------------------------
+# "Query" page (app/pages/14_query.py) — Claude-powered NL→SQL, power-user mode.
+#
+# The Query page is the power-user sibling of the Ask page: instead of a
+# conversational answer + prose, the user states a SQL-shaped request and gets
+# the literal query (editable + re-runnable) next to the result. The few-shot
+# NL→SQL pairs below steer Claude toward the marts' actual column names and the
+# guard's `analytics_marts.*`-only rule. They live here (not in the page) so a
+# unit test can assert every example SQL passes `validate_sql` — we must never
+# teach Claude a query our own guard would reject.
+# ---------------------------------------------------------------------------
+
+# (request, sql) pairs. Every SQL here MUST pass validate_sql() — locked by a
+# test in tests/test_query.py. Keep them runnable against the real marts so they
+# double as schema-drift canaries (verified against the populated warehouse).
+QUERY_FEWSHOT: list[tuple[str, str]] = [
+    (
+        "Weeks where my total Zone 2 minutes topped 90 and average HRV stayed above 50ms",
+        "SELECT date_trunc('week', t.day) AS week,\n"
+        "       round(SUM(t.zone_2_min)::numeric, 1) AS zone_2_min,\n"
+        "       round(AVG(h.hrv_ms)::numeric, 1) AS avg_hrv_ms\n"
+        "FROM analytics_marts.mart_training_load t\n"
+        "JOIN analytics_marts.mart_daily_hrv h ON h.day = t.day\n"
+        "GROUP BY 1\n"
+        "HAVING SUM(t.zone_2_min) > 90 AND AVG(h.hrv_ms) > 50\n"
+        "ORDER BY week",
+    ),
+    (
+        "Days where recovery was strained and ACWR was above 1.3, most recent first",
+        "SELECT day, recovery_signal, round(acwr::numeric, 2) AS acwr,\n"
+        "       rhr_bpm, round(hrv_ms::numeric, 1) AS hrv_ms\n"
+        "FROM analytics_marts.mart_recovery_state\n"
+        "WHERE recovery_signal = 'strained' AND acwr > 1.3\n"
+        "ORDER BY day DESC",
+    ),
+    (
+        "My 10 workouts with the most Zone 2 time, in minutes",
+        "SELECT day_local AS day, activity_type,\n"
+        "       round((zone_2_sec / 60.0)::numeric, 1) AS zone_2_min\n"
+        "FROM analytics_marts.mart_workout_zones\n"
+        "ORDER BY zone_2_sec DESC\n"
+        "LIMIT 10",
+    ),
+    (
+        "Nights where sleep efficiency dropped below 85%, with the composite score",
+        "SELECT night_date, sleep_efficiency_pct, composite_score, awakening_count\n"
+        "FROM analytics_marts.mart_sleep_nights\n"
+        "WHERE sleep_efficiency_pct < 85\n"
+        "ORDER BY night_date DESC",
+    ),
+    (
+        "Monthly average resting heart rate",
+        "SELECT date_trunc('month', day) AS month,\n"
+        "       round(AVG(resting_heart_rate)::numeric, 1) AS avg_rhr\n"
+        "FROM analytics_marts.mart_daily_rhr\n"
+        "GROUP BY 1\n"
+        "ORDER BY 1",
+    ),
+]
+
+# Sidebar click-to-fill prompts. SQL-shaped phrasing on purpose — this page is
+# for users who think in queries, not casual questions.
+QUERY_EXAMPLE_REQUESTS: list[str] = [
+    "Weeks where Zone 2 minutes exceeded 90 and average HRV stayed above 50ms",
+    "Days where recovery was strained and ACWR was above 1.3",
+    "Top 10 workouts by Zone 2 minutes",
+    "Nights with sleep efficiency below 85%, with composite score",
+    "Monthly average resting heart rate",
+    "7-day forecast rows for HRV from the forecast bands mart",
+]
+
+
+def format_fewshot_block(examples: list[tuple[str, str]]) -> str:
+    """Render (request, sql) pairs into a deterministic prompt block.
+
+    Pure function — the output is byte-stable for a given input so it can sit
+    behind the prompt-cache breakpoint without invalidating it.
+    """
+    blocks = [f"Request: {req}\nSQL:\n{sql.strip()}" for req, sql in examples]
+    return "\n\n".join(blocks)

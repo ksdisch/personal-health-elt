@@ -48,10 +48,6 @@ short list of reliability/quality fixes.
   search, and add the 4th signal (sleep duration) to the forecast bands.
   → [BACKLOG: Fit Holt's hyperparameters](BACKLOG.md#improvement-fit-holts-hyperparameters-per-metric-via-grid-search)
   · [BACKLOG: Add sleep-duration to mart_forecast_bands](BACKLOG.md#improvement-add-sleep-duration-time-series-to-mart_forecast_bands)
-- **Natural-language → SQL page (`13_query`).** Power-user companion to the
-  conversational Ask agent: type a SQL-shaped request, get the query + result +
-  refine loop, with read-only / `analytics_marts`-only guardrails.
-  → [BACKLOG: Natural-language → SQL agent](BACKLOG.md#feature-natural-language--sql-agent-over-the-marts)
 - **Sleep-target calibration.** Once N ≥ 60 nights, decide deliberately whether
   the sleep-score targets stay literature-derived or move to a personal baseline.
   → [BACKLOG: Calibrate sleep score targets](BACKLOG.md#refactor-calibrate-sleep-score-targets-to-personal-baseline)
@@ -95,6 +91,7 @@ insight engine. Each is a deliberate "someday," not a commitment.
 See [`CHANGELOG.md`](CHANGELOG.md) for the full release history. Highlights through
 `v0.3.0`: the forecasting marts (Holt's method, pure-SQL), the anomaly →
 notification pipeline, the sleep hypnogram + composite-score marts, the
-conversational Ask agent, the `daily-workout-coach` second consumer of
+conversational Ask agent, the power-user NL→SQL `14_query` page (editable SQL +
+result side-by-side + refine loop), the `daily-workout-coach` second consumer of
 `mart_recovery_state`, self-hosted Prefect automation, the Tempo Firestore feed,
 and the full Tier-1/Tier-2 docs set.

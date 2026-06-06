@@ -146,7 +146,7 @@ refresh raw + dbt, then feeds the three `mart_recovery_state` consumers.
 
 ## App pages
 
-Twelve Streamlit pages under `app/pages/` (plus `home.py`), each backed by marts:
+Fourteen Streamlit pages under `app/pages/` (plus `home.py`), each backed by marts:
 
 | Page | What it shows | Key marts |
 | --- | --- | --- |
@@ -162,6 +162,8 @@ Twelve Streamlit pages under `app/pages/` (plus `home.py`), each backed by marts
 | `10_ask` | Conversational "Ask your health data" (Claude over the marts) | dbt manifest + marts |
 | `11_forecast` | 7-day Holt forecasts + backtest accuracy | `mart_forecast_bands`, `mart_forecast_backtest` |
 | `12_sleep` | Hypnogram, nights, naps | `mart_sleep_nights`, `mart_sleep_naps`, `mart_sleep_stages` |
+| `13_experiments` | Causal-inference results (ITS/HAC + permutation + DiD) | `mart_experiment_effects` |
+| `14_query` | Power-user NL→SQL: editable SQL + result side-by-side, refine loop | dbt manifest + marts |
 
 ## Stack
 
