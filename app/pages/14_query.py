@@ -93,6 +93,7 @@ def _reset_session() -> None:
         "qs_messages",
         "qs_pending_tool_id",
         "qs_sql",
+        "qs_editor",
         "qs_chart_hint",
         "qs_turns",
         "qs_result_df",
@@ -319,6 +320,11 @@ if submitted:
             note = tool.input.get("note", "")
             ss["qs_turns"].append((request, note))
             _run_and_store(tool.input.get("query", ""))
+            # Push the new SQL into the editor's OWN key. A keyed text_area
+            # ignores its `value=` on reruns once the key exists, so on a refine
+            # we must write the key directly or the box shows the stale query.
+            # Legal here because the widget isn't instantiated until below.
+            ss["qs_editor"] = ss["qs_sql"]
         else:
             st.error(f"Unexpected tool: {tool.name}")
 
@@ -328,9 +334,13 @@ if ss["qs_sql"]:
 
     with col_sql:
         st.subheader("SQL")
+        # The editor is driven by its session_state key (`qs_editor`), not by
+        # `value=` — see the write_sql handler above. setdefault seeds it the
+        # first time we reach this block; thereafter user edits and refreshed
+        # Claude SQL both flow through the key.
+        ss.setdefault("qs_editor", ss["qs_sql"])
         edited = st.text_area(
             "Editable SQL",
-            value=ss["qs_sql"],
             height=300,
             key="qs_editor",
             label_visibility="collapsed",
