@@ -10,6 +10,22 @@ they group work by narrative arc rather than by release event.
 
 ## [Unreleased]
 
+### Added
+- **Natural-language → SQL Query page (`app/pages/14_query.py`).** Power-user
+  sibling of the Ask page: type a SQL-shaped request and Claude writes the
+  literal query against `analytics_marts.*`, shown side-by-side with the result
+  table, **hand-editable**, with a multi-turn **refine loop** ("only weekdays")
+  and a CSV download. Query-first (the SQL is the deliverable) vs. Ask's
+  answer-first framing. Reuses the existing safety gate verbatim — `validate_sql`
+  (single SELECT, no DDL/DML, `analytics_marts.*`-only) + `execute_safe_sql`
+  (`statement_timeout 10s`, `LIMIT 10000`) — and adds a curated few-shot block of
+  NL→SQL anchor pairs (`NL_SQL_FEWSHOT`) to the cached system prompt. The page is
+  numbered 14 because 13 is `experiments`. Verified live end-to-end (real Claude
+  call → guard → execute against the synthetic warehouse) plus a DB-gated
+  regression test (`tests/test_query_anchors_db.py`) that executes every anchor
+  against `health_demo` — which caught a real `ROUND(double precision, int)`
+  Postgres bug the AST-level tests could not.
+
 ## [0.4.0] - 2026-06-05
 
 Autonomy substrate, causal inference, and cross-source correlations — plus the
