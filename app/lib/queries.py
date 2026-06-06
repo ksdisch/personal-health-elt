@@ -547,3 +547,92 @@ def execute_safe_sql(
     with engine.connect() as conn, conn.begin():
         conn.execute(text(f"SET LOCAL statement_timeout = '{int(timeout_seconds)}s'"))
         return pd.read_sql(text(safe_sql), conn)
+
+
+# ---------------------------------------------------------------------------
+# "Query" page (app/pages/14_query.py) — NL→SQL power-user helpers.
+#
+# The Query page is the power-user sibling of the Ask page. Ask is
+# answer-first: it hides the SQL and narrates the result. Query is
+# query-first: the literal SQL is the deliverable, shown next to the
+# result table, hand-editable, and refinable across turns. It reuses the
+# same safety gate (validate_sql / execute_safe_sql) and schema feed
+# (compile_schema_summary) — the only new ingredient here is a few-shot
+# block of NL→SQL pairs that anchors Claude on this warehouse's idioms.
+#
+# Two pure, unit-testable units live here so the page module (which can't
+# be imported by name — leading digit) stays a thin Streamlit shell:
+#   NL_SQL_FEWSHOT      — the anchor pairs (every SQL is validate_sql-clean)
+#   render_fewshot_block — pure: pairs → prompt text
+# A regression test asserts every example still passes validate_sql, so a
+# typo'd schema/keyword in an anchor fails CI rather than teaching Claude
+# a query the gate would reject at runtime.
+# ---------------------------------------------------------------------------
+
+# Each pair is (natural-language request, canonical SQL). The SQL must be
+# a single SELECT against analytics_marts.* — i.e. it must pass
+# validate_sql() — because Claude learns the *shape* of a valid query
+# from these, and tests/test_query_page.py enforces that invariant.
+NL_SQL_FEWSHOT: list[tuple[str, str]] = [
+    (
+        "Weeks where total Zone 2 minutes exceeded 90 and average HRV stayed above 60 ms",
+        """WITH weekly AS (
+    SELECT date_trunc('week', t.day) AS week,
+           SUM(t.zone_2_min)         AS zone_2_min,
+           AVG(h.hrv_ms)             AS avg_hrv_ms
+    FROM analytics_marts.mart_training_load t
+    JOIN analytics_marts.mart_daily_hrv h ON h.day = t.day
+    GROUP BY 1
+)
+SELECT week,
+       ROUND(zone_2_min::numeric)     AS zone_2_min,
+       ROUND(avg_hrv_ms::numeric, 1)  AS avg_hrv_ms
+FROM weekly
+WHERE zone_2_min > 90 AND avg_hrv_ms > 60
+ORDER BY week""",
+    ),
+    (
+        "Average resting heart rate by recovery signal, with the day count",
+        """SELECT recovery_signal,
+       ROUND(AVG(rhr_bpm)::numeric, 1) AS avg_rhr_bpm,
+       COUNT(*)                        AS n_days
+FROM analytics_marts.mart_recovery_state
+GROUP BY recovery_signal
+ORDER BY avg_rhr_bpm""",
+    ),
+    (
+        "My 10 longest Zone 2 workouts, with activity type and average heart rate",
+        """SELECT day_local,
+       activity_type,
+       ROUND((zone_2_sec / 60.0)::numeric, 1) AS zone_2_min,
+       avg_hr_bpm
+FROM analytics_marts.mart_workout_zones
+WHERE zone_2_sec > 0
+ORDER BY zone_2_sec DESC
+LIMIT 10""",
+    ),
+    (
+        "Compare my average HRV and resting HR on high-meeting days versus normal days",
+        """SELECT c.is_high_meeting_day,
+       ROUND(AVG(s.hrv_ms)::numeric, 1)  AS avg_hrv_ms,
+       ROUND(AVG(s.rhr_bpm)::numeric, 1) AS avg_rhr_bpm,
+       COUNT(*)                          AS n_days
+FROM analytics_marts.mart_daily_signals s
+JOIN analytics_marts.mart_daily_context c ON c.day = s.day
+GROUP BY c.is_high_meeting_day
+ORDER BY c.is_high_meeting_day""",
+    ),
+]
+
+
+def render_fewshot_block(pairs: list[tuple[str, str]]) -> str:
+    """Render NL→SQL pairs into a deterministic prompt block.
+
+    Pure function: the same `pairs` always yields the same bytes, so the
+    block can sit inside the cached system prompt without breaking the
+    cache. Ordering is preserved (the pairs are already a curated list).
+    """
+    chunks: list[str] = []
+    for i, (request, sql) in enumerate(pairs, start=1):
+        chunks.append(f"Example {i}\nRequest: {request.strip()}\nSQL:\n{sql.strip()}")
+    return "\n\n".join(chunks)
