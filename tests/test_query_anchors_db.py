@@ -24,10 +24,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from app.lib.queries import NL_SQL_FEWSHOT, _add_limit_if_missing, validate_sql
+from app.lib.queries import MART_SCHEMA, NL_SQL_FEWSHOT, _add_limit_if_missing, validate_sql
 from ingest.flows.make_demo_db import DEMO_DB, demo_engine
-
-MARTS_SCHEMA = "analytics_marts"
 
 
 def _engine_or_skip():
@@ -46,7 +44,7 @@ def demo_built():
     engine = _engine_or_skip()
     try:
         with engine.connect() as conn:
-            conn.execute(text(f"SELECT 1 FROM {MARTS_SCHEMA}.mart_recovery_state LIMIT 1"))
+            conn.execute(text(f"SELECT 1 FROM {MART_SCHEMA}.mart_recovery_state LIMIT 1"))
     except (OperationalError, ProgrammingError):
         pytest.skip(f"{DEMO_DB} not built — run `uv run python -m ingest.flows.make_demo_db` first")
     return engine

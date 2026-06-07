@@ -67,7 +67,16 @@ so this lands as `14_query`.
   Added `tests/test_query_anchors_db.py` (DB-gated, skips when `health_demo`
   unbuilt) that **executes** every anchor against the warehouse — the pure
   AST-level tests could not have caught this.
-- **Known gap:** the live NL→SQL generation needs a real `ANTHROPIC_API_KEY`,
-  which is blank in this environment, so that leg is verified by parity with the
-  proven `10_ask` SDK integration + the executed-anchor evidence, not by a live
-  model call. The page renders its skip path without a key.
+- **Live end-to-end verified.** `.env` carries a real `ANTHROPIC_API_KEY` that
+  `ingest/config.py` loads via `load_dotenv()`, so a real model call is reachable
+  headlessly. Driven through Streamlit's `AppTest` runner (with
+  `POSTGRES_DB=health_demo`): request → Claude `emit_sql` → `validate_sql` →
+  `execute_safe_sql` → 15 correct rows, no exception — and the generated SQL used
+  the `::numeric` cast, confirming the bug-fix guidance reached the live model.
+  Without a key the page renders its skip path instead.
+- **Guardrail scope (documented residual):** the AST gate (`validate_sql`) bounds
+  *statements/keywords/schema*; it does NOT block set-returning functions,
+  `pg_sleep`, or `FOR SHARE`/`FOR KEY SHARE`. Those are bounded by the
+  transaction's `statement_timeout` (10s) + `LIMIT` injection, which is the
+  accepted control for a single-user local app. A dedicated read-only Postgres
+  GRANT role is the durable hardening (tracked as a follow-up).

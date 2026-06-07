@@ -46,7 +46,10 @@ from app.lib.queries import (
 )
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MAX_RESPONSE_TOKENS = 1024
+# Generous enough that a large multi-CTE query + explanation can't truncate the
+# emit_sql tool call (a truncated tool_use surfaces as the generic "no usable
+# response" — see _apply_response). 4096 covers any single-statement query.
+MAX_RESPONSE_TOKENS = 4096
 DEFAULT_LIMIT = 10000
 TIMEOUT_SECONDS = 10
 
@@ -268,7 +271,10 @@ def _do_refine() -> None:
 
 def _render_chart(df: pd.DataFrame, chart_hint: str) -> None:
     """Best-effort chart. Falls back silently — the table is the source of
-    truth, so a bad fit just means no chart, never an error."""
+    truth, so a bad fit just means no chart, never an error. The whole
+    build+render is guarded: e.g. Altair raises MaxRowsError above 5000 rows
+    (and DEFAULT_LIMIT is 10000), so a large charted result must degrade to
+    "no chart", not a page crash."""
     if chart_hint == "table" or df.empty:
         return
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
@@ -276,27 +282,32 @@ def _render_chart(df: pd.DataFrame, chart_hint: str) -> None:
         return
     x_col = df.columns[0]
     y_col = numeric_cols[-1]
-    if chart_hint == "line":
-        chart = (
-            alt.Chart(df)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X(f"{x_col}:T" if pd.api.types.is_datetime64_any_dtype(df[x_col]) else x_col),
-                y=alt.Y(y_col, scale=alt.Scale(zero=False)),
-                tooltip=list(df.columns),
+    try:
+        if chart_hint == "line":
+            chart = (
+                alt.Chart(df)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X(
+                        f"{x_col}:T" if pd.api.types.is_datetime64_any_dtype(df[x_col]) else x_col
+                    ),
+                    y=alt.Y(y_col, scale=alt.Scale(zero=False)),
+                    tooltip=list(df.columns),
+                )
             )
-        )
-    else:  # bar
-        chart = (
-            alt.Chart(df)
-            .mark_bar()
-            .encode(
-                x=alt.X(str(x_col), sort="-y"),
-                y=alt.Y(y_col),
-                tooltip=list(df.columns),
+        else:  # bar
+            chart = (
+                alt.Chart(df)
+                .mark_bar()
+                .encode(
+                    x=alt.X(str(x_col), sort="-y"),
+                    y=alt.Y(y_col),
+                    tooltip=list(df.columns),
+                )
             )
-        )
-    st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, use_container_width=True)
+    except Exception:  # noqa: BLE001 — chart is best-effort; the table is the source of truth
+        return
 
 
 # ---------------------------------------------------------------------- page
