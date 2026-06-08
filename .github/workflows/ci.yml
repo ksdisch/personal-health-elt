@@ -81,6 +81,9 @@ jobs:
         # docs/design/autonomous-build-plan.md.
         run: uv run python -m ingest.flows.make_demo_db
 
-      - name: Golden-mart regression tests (populated data)
-        # Freezes each mart's output over the synthetic corpus; drift goes RED.
-        run: uv run pytest tests/test_golden_marts.py -q
+      - name: Populated-data regression tests
+        # Run against the built health_demo warehouse:
+        #  - golden snapshots: each mart's output over the synthetic corpus; drift goes RED.
+        #  - NL→SQL anchors: every Query-page few-shot actually executes against the live
+        #    mart schema (guards the ROUND-on-double class of bug the AST tests can't see).
+        run: uv run pytest tests/test_golden_marts.py tests/test_query_anchors_db.py -q
